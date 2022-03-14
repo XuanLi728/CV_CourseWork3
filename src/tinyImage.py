@@ -1,6 +1,6 @@
 
 import os
-from turtle import screensize
+import re
 
 import cv2
 import numpy as np
@@ -61,28 +61,51 @@ def img2matrix(Path):
     
     return np.array(imgFeature), np.array(labelVector)
 
-def train(dataset, labels):
-    clf = KNeighborsClassifier()
+def train(imgFeature_train, labelVector_train):
+    # clf = KNeighborsClassifier()
     # clf.fit(x_train, y_train)
-    # y_predicted = clf.predict(x_test)
-    # accuracy = np.mean(y_test == y_predicted) * 100
-    # print('Acc: {0: .1f}%'.format(accuracy))
+    # y_predicted = clf.predict(x_val)
+    # accuracy = np.mean(y_val == y_predicted) * 100
+    clf = KNeighborsClassifier()
+    clf.fit(imgFeature_train, labelVector_train)
+    y_predicted = clf.predict(imgFeature_train)
+    accuracy = np.mean(labelVector_train == y_predicted) * 100
+    print(accuracy) # 30.8
+    print(metrics.classification_report(labelVector_train, y_predicted, target_names=labels))
+    return clf, accuracy
 
-    cv = ShuffleSplit(n_splits=5, test_size=0.2, random_state=42)
-    scores = cross_validate(clf, dataset, labels, cv=cv,return_estimator=True)
-    clfs = scores['estimator']
-    scores.pop('estimator')
-    return clfs, scores
-
-def test(groudTruth, predicted):
+def Val(groudTruth, predicted):
     return metrics.classification_report(groudTruth, predicted, target_names=labels)
 
-# load the data
-imgFeature, labelVector = img2matrix(trainingDatasetPath)
-x_train, x_test, y_train, y_test = train_test_split(imgFeature, labelVector, train_size=0.8, random_state=42)
-clfs, scores = train(x_train, y_train)
-print(scores)
+def test(Path, clf):
+    results = []
+    fileNames = os.listdir(Path)
+    fileNames.sort(key= lambda x:int(x[:-4]))
+    for imgPath in fileNames:
+        if(imgPath.startswith('.')): continue # Ignore the .DS_Stroe
+        imgFullPath = os.path.join(Path, imgPath)
 
-for clf in clfs:
-    testAcc = test(y_test, clf.predict(x_test),)
-    print(testAcc)
+        # reshape the matrix to vector
+        img_flat = np.reshape(readImg(imgFullPath), (1, -1))
+        y_predicted = clf.predict(img_flat)
+        results.append(imgPath + ' ' + str(list(labels.keys())[list(labels.values()).index(y_predicted[0])]))
+    
+    f=open("results_run_1.txt","w")
+    
+    f.writelines('\n'.join(results))
+    f.close()
+    print('Done')
+
+
+# load the data
+imgFeature_train, labelVector_train = img2matrix(trainingDatasetPath)
+# x_train, x_val, y_train, y_val = train_test_split(imgFeature, labelVector, train_size=0.8, random_state=42)
+# clf, scores = train(x_train, x_val, y_train, y_val)
+# print(scores)
+clf, accuracy = train(imgFeature_train, labelVector_train)
+
+test(testDatasetPath, clf)
+
+# print(len(os.listdir(testDatasetPath))) # 总共2985个测试样本
+
+
