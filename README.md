@@ -8,7 +8,7 @@
   - [ ] 添加PCA，KNN调参
 
 - [ ] Run 2 Bag-of-visual-words
-  - 当前 Acc: 0.04 (???)
+  - 当前 Acc: 0.06 (???)
   - [ ] Debug, 找出表现差的原因
   - [X] 添加preprocess
   - [X] 添加滑动窗口patches提取
