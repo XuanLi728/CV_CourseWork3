@@ -1,3 +1,9 @@
+## 配置
+  1. 文件树配置
+  2. 环境配置
+     1. conda env create -f environment.yaml
+     2. pip install -r requirnments.txt
+
 ## TODO：
 - [X] Run 1 KNN
   - 当前 Acc: 30.8%
