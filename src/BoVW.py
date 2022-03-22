@@ -107,6 +107,7 @@ def img2Feature(model, imgVector_train, image_counter, class_counter, no_cluster
     return im_features
 
 def svcParamSelection(X, y, nfolds):
+    # best : 0.1, 0.5
     Cs = [0.5, 0.1, 0.15, 0.2, 0.3]
     gammas = [0.1, 0.11, 0.095, 0.105]
     param_grid = {'C': Cs, 'gamma' : gammas}
