@@ -131,7 +131,8 @@ def OvRLCs(data, label, n_models):
     X_train, X_test, y_train, y_test = train_test_split(data, label, train_size=0.9, shuffle=True)
     estimators = []
     for index in range(n_models):
-        model = ('svc_'+str(index), SVC(C=0.5, gamma=0.1))
+        # model = ('svc_'+str(index), SVC(C=0.5, gamma=0.1))
+        model = ('lr_'+str(index), LinearSVC(multi_class='ovr'))
         estimators.append(model)
 
     clf = StackingClassifier(
@@ -146,8 +147,9 @@ def OvRLCs(data, label, n_models):
 
     return clf, clf.score(X_test, y_test)
 
-img_size = 256
-n_clusters = 800
+img_size = 128
+n_clusters = 500
+n_models = 5 # 
 
 imgVector_train, labelVector_train, img_counter, class_counter = img2vectors(trainingDatasetPath)
 imgVector_train = np.reshape(imgVector_train, (-1,4))
@@ -159,5 +161,6 @@ print('Extracting features...')
 imgFeature_train = img2Feature(kmeans, imgVector_train, img_counter, class_counter, n_clusters)
 # imgVector_train = normalisation(imgFeature_train)
 # print(imgFeature_train.shape) #(1500, 500)
-final_model, score = OvRLCs(imgFeature_train, labelVector_train, n_models=5)
+print('Training OvRLCs...')
+final_model, score = OvRLCs(imgFeature_train, labelVector_train, n_models=n_models)
 print(score)

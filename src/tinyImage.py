@@ -66,7 +66,7 @@ def train(imgFeature_train, labelVector_train):
     # clf.fit(x_train, y_train)
     # y_predicted = clf.predict(x_val)
     # accuracy = np.mean(y_val == y_predicted) * 100
-    clf = KNeighborsClassifier()
+    clf = KNeighborsClassifier(n_neighbors=3)
     clf.fit(imgFeature_train, labelVector_train)
     y_predicted = clf.predict(imgFeature_train)
     accuracy = np.mean(labelVector_train == y_predicted) * 100
