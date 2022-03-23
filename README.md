@@ -6,8 +6,8 @@
 
 ## TODO：
 - [X] Run 1 KNN
-  - 当前 Acc: 40.467% n=3
-  - 交叉验证Acc 最高只有17%, cv=5, train_size=0.8
+  - 当前 Acc: 25% n=5
+  - 交叉验证Acc 25%, cv=5, train_size=0.9
   - [ ] 注释
   - [ ] 添加preprocess
   - [ ] 代码结构美化

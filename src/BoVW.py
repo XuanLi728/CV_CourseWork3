@@ -14,8 +14,6 @@ from sklearn.utils.random import sample_without_replacement
 from tqdm import tqdm, trange
 from yellowbrick.cluster import KElbowVisualizer
 
-np.random.seed(42) 
-
 trainingDatasetPath = 'data/training'
 testDatasetPath = 'data/testing'
 
@@ -55,7 +53,7 @@ def sliding_window(image, stepSize, windowSize):
 			# yield the current window
 			yield (image[y:y + windowSize[1], x:x + windowSize[0]])
 
-def split_patchs(img, patch_size=8):
+def split_patchs(img, patch_size=8, down_sample_rate=2, step_size=2):
     patches = []
     if img.shape != (img_size,img_size):
         img = cv2.resize(img,(img_size,img_size))
@@ -63,11 +61,16 @@ def split_patchs(img, patch_size=8):
     # for block in np.reshape(view_as_blocks(img, block_shape=(1,patch_size, patch_size)), (-1, patch_size, patch_size)): # 将图片分割为8x8的窗口
     #     print(block)
     #     patches.append(np.reshape(block[::4,::4], (-1,))) # 每隔4个采样，拉直 （无重叠）
-    for patch in sliding_window(img, 2, (8,8)):
-        patches.append(np.reshape(patch[::4,::4], (-1,))) # 每隔4个采样，拉直 (有重叠)
+    for epoch in range(down_sample_rate+1): # 金字塔降采样
+        if epoch == 0:
+            continue
+        else:
+            img = cv2.pyrDown(img)
+        for patch in sliding_window(img, step_size, (patch_size,patch_size)):
+            patches.append(np.reshape(patch[::4,::4], (-1,))) # 每隔4个采样，拉直 (有重叠)
     return np.array(patches)
 
-def img2vectors(Path):
+def img2vectors(Path, step_size):
     imgVector = []
     labelVector = []
     class_counter = np.zeros((15, ), dtype=int)
@@ -79,7 +82,7 @@ def img2vectors(Path):
         for imgPath in os.listdir(dirFullPath):
             if(imgPath.startswith('.')): continue # Ignore the .DS_Stroe
             imgFullPath = os.path.join(dirFullPath, imgPath)
-            img_vectors = normalisation(split_patchs(readImg(imgFullPath))) # 每张图片分割为 n x (4, )的vector
+            img_vectors = normalisation(split_patchs(readImg(imgFullPath), step_size)) # 每张图片分割为 n x (4, )的vector
             img_counter += 1
             imgVector.append(img_vectors)
             labelVector.append(class_index)
@@ -160,6 +163,8 @@ def OvRLCs(data, label, n_models):
         # model = ('lr_'+str(index), LinearSVC(multi_class='ovr'))
         model = ('lr_'+str(index), LogisticRegression(multi_class='ovr'))
         estimators.append(model)
+        # model = ('svc_'+str(index), LinearSVC(multi_class='ovr'))
+        # estimators.append(model)
 
     clf = StackingClassifier(
         estimators=estimators, 
@@ -182,19 +187,33 @@ def OvRLCs(data, label, n_models):
 
     return clf, metrics.classification_report(clf.predict(X_test), y_test, target_names=labels)
 
-img_size = 64
-n_clusters = 100
-n_models = 15 # 
+np.random.seed(48) 
+# 0.19
+img_size = 128 #越小获取到的信息可能更多
+n_clusters = 200
+n_models = 20 
+n_training_samples = 1024 # batch_size
+step_size = 3
 
+# 0.30 all data
 # img_size = 128
-# n_clusters = 500
-# n_models = 5 # 
+# n_clusters = 200
+# n_models = 20 
+# n_training_samples = 2048
+# step_size=2
 
-imgVector_train, labelVector_train, img_counter, class_counter = img2vectors(trainingDatasetPath)
+# 0.29
+# img_size = 128
+# n_clusters = 100
+# n_models = 20 
+# n_training_samples = 1024
+# step_size=2
+
+imgVector_train, labelVector_train, img_counter, class_counter = img2vectors(trainingDatasetPath, step_size=step_size)
 imgVector_train = np.reshape(imgVector_train, (-1,4))
 # print(imgFeature_train.shape) # (1536000, 4)
 print('Training KMeans...')
-kmeans, visual_words = kMeans(imgVector_train, n_training_samples=1024, n_clusters=n_clusters)
+kmeans, visual_words = kMeans(imgVector_train, n_training_samples=n_training_samples, n_clusters=n_clusters)
 # KMeans_clusters_selctor(imgVector_train)
 print('Extracting features...')
 imgFeature_train= img2Feature(kmeans, trainingDatasetPath, img_counter, n_clusters)

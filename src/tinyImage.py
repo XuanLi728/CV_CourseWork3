@@ -61,17 +61,18 @@ def img2matrix(Path):
     
     return np.array(imgFeature), np.array(labelVector)
 
-def train(imgFeature_train, labelVector_train):
+def train(imgFeature_train, labelVector_train, n_neighbors):
+    X_train, X_test, y_train, y_test = train_test_split(imgFeature_train, labelVector_train, train_size=0.9, shuffle=True)
     # clf = KNeighborsClassifier()
     # clf.fit(x_train, y_train)
     # y_predicted = clf.predict(x_val)
     # accuracy = np.mean(y_val == y_predicted) * 100
-    clf = KNeighborsClassifier(n_neighbors=3)
-    clf.fit(imgFeature_train, labelVector_train)
-    y_predicted = clf.predict(imgFeature_train)
+    clf = KNeighborsClassifier(n_neighbors=n_neighbors)
+    clf.fit(X_train, y_train)
+    y_predicted = clf.predict(X_test)
     accuracy = np.mean(labelVector_train == y_predicted) * 100
     print(accuracy) # 30.8
-    print(metrics.classification_report(labelVector_train, y_predicted, target_names=labels))
+    print(metrics.classification_report(y_predicted, y_test, target_names=labels))
     return clf, accuracy
 
 def Val(groudTruth, predicted):
@@ -102,9 +103,11 @@ imgFeature_train, labelVector_train = img2matrix(trainingDatasetPath)
 # x_train, x_val, y_train, y_val = train_test_split(imgFeature, labelVector, train_size=0.8, random_state=42)
 # clf, scores = train(x_train, x_val, y_train, y_val)
 # print(scores)
-clf, accuracy = train(imgFeature_train, labelVector_train)
+np.random.seed(7)
+n_neighbors=5 # 25 Acc
+clf, accuracy = train(imgFeature_train, labelVector_train, n_neighbors)
 
-test(testDatasetPath, clf)
+# test(testDatasetPath, clf)
 
 # print(len(os.listdir(testDatasetPath))) # 总共2985个测试样本
 
