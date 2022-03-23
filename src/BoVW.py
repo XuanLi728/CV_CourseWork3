@@ -1,9 +1,7 @@
 import os
-import re
 
 import cv2
 import numpy as np
-import scipy as sp
 from skimage.util.shape import view_as_blocks
 from sklearn import metrics
 from sklearn.cluster import MiniBatchKMeans
@@ -50,14 +48,23 @@ def readImg(path):
     img = cv2.resize(img,(img_size,img_size),interpolation=cv2.INTER_NEAREST)
     return img
 
+def sliding_window(image, stepSize, windowSize):
+	# slide a window across the image
+	for y in range(0, image.shape[0]-windowSize[0], stepSize):
+		for x in range(0, image.shape[1]-windowSize[1], stepSize):
+			# yield the current window
+			yield (image[y:y + windowSize[1], x:x + windowSize[0]])
+
 def split_patchs(img, patch_size=8):
     patches = []
     if img.shape != (img_size,img_size):
         img = cv2.resize(img,(img_size,img_size))
 
-    for block in np.reshape(view_as_blocks(img, block_shape=(patch_size, patch_size)), (-1, patch_size, patch_size)): # 将图片分割为8x8的窗口
-        patches.append(np.reshape(block[::4,::4], (-1,))) # 每隔4个采样，拉直
-
+    # for block in np.reshape(view_as_blocks(img, block_shape=(1,patch_size, patch_size)), (-1, patch_size, patch_size)): # 将图片分割为8x8的窗口
+    #     print(block)
+    #     patches.append(np.reshape(block[::4,::4], (-1,))) # 每隔4个采样，拉直 （无重叠）
+    for patch in sliding_window(img, 2, (8,8)):
+        patches.append(np.reshape(patch[::4,::4], (-1,))) # 每隔4个采样，拉直 (有重叠)
     return np.array(patches)
 
 def img2vectors(Path):
@@ -72,7 +79,7 @@ def img2vectors(Path):
         for imgPath in os.listdir(dirFullPath):
             if(imgPath.startswith('.')): continue # Ignore the .DS_Stroe
             imgFullPath = os.path.join(dirFullPath, imgPath)
-            img_vectors = normalisation(split_patchs(readImg(imgFullPath))) # 每张图片分割为 1024, (4, )的vector
+            img_vectors = normalisation(split_patchs(readImg(imgFullPath))) # 每张图片分割为 n x (4, )的vector
             img_counter += 1
             imgVector.append(img_vectors)
             labelVector.append(class_index)
@@ -87,44 +94,62 @@ def kMeans(data, n_training_samples=1024,n_clusters=492):
     model.fit(data)
     return model, model.cluster_centers_
 
-def KMeans_clusters_selctor(data):
-    model = MiniBatchKMeans(batch_size=2048 ,verbose=1)
-    # k is range of number of clusters.
-    visualizer = KElbowVisualizer(model, k=(490,510), timings= True) 
-    # visualizer = KElbowVisualizer(model, k=(2,30),metric='silhouette', timings= True)
-    visualizer.fit(data)        # Fit the data to the visualizer
-    visualizer.show() 
+# def KMeans_clusters_selctor(data):
+#     model = MiniBatchKMeans(batch_size=2048 ,verbose=1)
+#     # k is range of number of clusters.
+#     visualizer = KElbowVisualizer(model, k=(490,510), timings= True) 
+#     # visualizer = KElbowVisualizer(model, k=(2,30),metric='silhouette', timings= True)
+#     visualizer.fit(data)        # Fit the data to the visualizer
+#     visualizer.show() 
     
-def img2Feature(model, imgVector_train, image_counter, class_counter, no_clusters,):
+def img2Feature(model, Path, image_counter, no_clusters,):
     im_features = np.array([np.zeros(no_clusters) for _ in range(image_counter)])
-    for i in trange(len(class_counter), desc='extracting feature per class'):
-        for j in range(class_counter[i]):
-            feature = imgVector_train[j]
-            feature = feature.reshape(-1, 4)
-            idx = model.predict(feature)
-            im_features[i][idx] += 1
+    imgVector = []
+    labelVector = []
+    for i in trange(image_counter, desc='extracting feature per image'):
+        feature = imgVector_train[i]
+        feature = feature.reshape(-1, 4)
+        idx = model.predict(feature)
+        im_features[i][idx] += 1
+    # # TODO: 将之前读取完的特征重用
+    # for dirName in tqdm(os.listdir(Path), desc='extracting feature per class...'):
+    #     if(dirName.startswith('.')): continue # Ignore the .DS_Stroe
+    #     dirFullPath = os.path.join(Path, dirName)
+    #     img_counter = 0
+    #     class_index = labels[dirName]
+
+    #     for imgPath in os.listdir(dirFullPath):
+    #         if(imgPath.startswith('.')): continue # Ignore the .DS_Stroe
+
+    #         imgFullPath = os.path.join(dirFullPath, imgPath)
+    #         img_vectors = normalisation(split_patchs(readImg(imgFullPath))) # 每张图片分割为 n x (4, )的vector
+    #         feature = img_vectors.reshape(-1, 4)
+    #         idx = model.predict(feature)
+    #         im_features[img_counter][idx] += 1
+    #         labelVector.append(class_index)
+    #         img_counter+=1
 
     return im_features
 
-def svcParamSelection(X, y, nfolds):
-    # best : 0.1, 0.5
-    Cs = [0.5, 0.1, 0.15, 0.2, 0.3]
-    gammas = [0.1, 0.11, 0.095, 0.105]
-    param_grid = {'C': Cs, 'gamma' : gammas}
-    grid_search = GridSearchCV(SVC(), param_grid, cv=nfolds, n_jobs=4, verbose=1)
-    grid_search.fit(X, y)
-    grid_search.best_params_
-    return grid_search.best_params_
+# def svcParamSelection(X, y, nfolds):
+#     # best : 0.1, 0.5
+#     Cs = [0.5, 0.1, 0.15, 0.2, 0.3]
+#     gammas = [0.1, 0.11, 0.095, 0.105]
+#     param_grid = {'C': Cs, 'gamma' : gammas}
+#     grid_search = GridSearchCV(SVC(), param_grid, cv=nfolds, n_jobs=4, verbose=1)
+#     grid_search.fit(X, y)
+#     grid_search.best_params_
+#     return grid_search.best_params_
 
-def findSVM(im_features, train_labels):
-    features = im_features
-    params = svcParamSelection(features, train_labels, 5)
-    C_param, gamma_param = params.get("C"), params.get("gamma")
-    print(C_param, gamma_param)
+# def findSVM(im_features, train_labels):
+#     features = im_features
+#     params = svcParamSelection(features, train_labels, 5)
+#     C_param, gamma_param = params.get("C"), params.get("gamma")
+#     print(C_param, gamma_param)
   
-    svm = SVC(C =  C_param, gamma = gamma_param,)
-    svm.fit(features, train_labels)
-    return svm
+#     svm = SVC(C =  C_param, gamma = gamma_param,)
+#     svm.fit(features, train_labels)
+#     return svm
 
 def OvRLCs(data, label, n_models):
 
@@ -132,24 +157,38 @@ def OvRLCs(data, label, n_models):
     estimators = []
     for index in range(n_models):
         # model = ('svc_'+str(index), SVC(C=0.5, gamma=0.1))
-        model = ('lr_'+str(index), LinearSVC(multi_class='ovr'))
+        # model = ('lr_'+str(index), LinearSVC(multi_class='ovr'))
+        model = ('lr_'+str(index), LogisticRegression(multi_class='ovr'))
         estimators.append(model)
 
     clf = StackingClassifier(
         estimators=estimators, 
-        final_estimator=LogisticRegression(),
+        final_estimator=LinearSVC(),
         cv=5,
         verbose=1,
         n_jobs=4,
     )
+
+    # clf = BaggingClassifier(
+    #     # estimators=estimators, 
+    #     # final_estimator=LinearSVC(),
+    #     n_estimators=n_models,
+    #     # cv=5,
+    #     verbose=1,
+    #     n_jobs=4,
+    # )
     clf.fit(X_train, y_train)
     # clf = findSVM(X_train, y_train)
 
-    return clf, clf.score(X_test, y_test)
+    return clf, metrics.classification_report(clf.predict(X_test), y_test, target_names=labels)
 
-img_size = 128
-n_clusters = 500
-n_models = 5 # 
+img_size = 64
+n_clusters = 100
+n_models = 15 # 
+
+# img_size = 128
+# n_clusters = 500
+# n_models = 5 # 
 
 imgVector_train, labelVector_train, img_counter, class_counter = img2vectors(trainingDatasetPath)
 imgVector_train = np.reshape(imgVector_train, (-1,4))
@@ -158,7 +197,7 @@ print('Training KMeans...')
 kmeans, visual_words = kMeans(imgVector_train, n_training_samples=1024, n_clusters=n_clusters)
 # KMeans_clusters_selctor(imgVector_train)
 print('Extracting features...')
-imgFeature_train = img2Feature(kmeans, imgVector_train, img_counter, class_counter, n_clusters)
+imgFeature_train= img2Feature(kmeans, trainingDatasetPath, img_counter, n_clusters)
 # imgVector_train = normalisation(imgFeature_train)
 # print(imgFeature_train.shape) #(1500, 500)
 print('Training OvRLCs...')
