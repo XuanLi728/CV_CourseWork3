@@ -35,3 +35,7 @@ http://openimaj.org/tutorial/classification101.html
 https://github.com/gary1346aa/Scene-Recognition
 
 https://github.com/gurkandemir/Bag-of-Visual-Words
+
+https://github.com/AMANVerma28/Indoor-Outdoor-scene-classification
+
+https://github.com/buptchan/scene-classification

@@ -2,6 +2,7 @@ import os
 
 import cv2
 import numpy as np
+import sklearn
 from skimage.util.shape import view_as_blocks
 from sklearn import metrics
 from sklearn.cluster import MiniBatchKMeans
@@ -13,6 +14,9 @@ from sklearn.svm import SVC, LinearSVC
 from sklearn.utils.random import sample_without_replacement
 from tqdm import tqdm, trange
 from yellowbrick.cluster import KElbowVisualizer
+
+# TODO: 借鉴下以下的思路
+# https://github1s.com/FrankWJW/SceneRecognition/blob/master/code/cv3/patch_vocabulary.m
 
 trainingDatasetPath = 'data/training'
 testDatasetPath = 'data/testing'
@@ -96,6 +100,15 @@ def kMeans(data, n_training_samples=1024,n_clusters=492):
     #     training_data = sample_without_replacement(data.shape[0], n_training_samples)
     model.fit(data)
     return model, model.cluster_centers_
+# https://blog.csdn.net/qq_36622009/article/details/102895411
+def idf_and_norm(img_histogram_list):
+    words_occurrences = np.sum((img_histogram_list > 0) * 1, axis=0)  # 求出每个word在所有图片中出现的频数
+    idf = np.array(np.log((1.0 * len(img_histogram_list) + 1) / (1.0 * words_occurrences + 
+         1)),'float32')     
+ 
+    img_book_list = img_histogram_list * idf
+    img_book_list = sklearn.preprocessing.normalize(img_book_list, norm='l2')  # 归一化
+    return idf, img_book_list
 
 # def KMeans_clusters_selctor(data):
 #     model = MiniBatchKMeans(batch_size=2048 ,verbose=1)
@@ -160,15 +173,15 @@ def OvRLCs(data, label, n_models):
     estimators = []
     for index in range(n_models):
         # model = ('svc_'+str(index), SVC(C=0.5, gamma=0.1))
-        # model = ('lr_'+str(index), LinearSVC(multi_class='ovr'))
-        model = ('lr_'+str(index), LogisticRegression(multi_class='ovr'))
+        model = ('lr_'+str(index), LinearSVC(multi_class='ovr'))
+        # model = ('lr_'+str(index), LogisticRegression())
         estimators.append(model)
         # model = ('svc_'+str(index), LinearSVC(multi_class='ovr'))
         # estimators.append(model)
 
     clf = StackingClassifier(
         estimators=estimators, 
-        final_estimator=LinearSVC(),
+        final_estimator=LogisticRegression(),
         cv=5,
         verbose=1,
         n_jobs=4,
@@ -185,15 +198,23 @@ def OvRLCs(data, label, n_models):
     clf.fit(X_train, y_train)
     # clf = findSVM(X_train, y_train)
 
-    return clf, metrics.classification_report(clf.predict(X_test), y_test, target_names=labels)
+    return clf, metrics.classification_report(y_test,clf.predict(X_test), target_names=labels)
 
-np.random.seed(48) 
-# 0.19
-img_size = 128 #越小获取到的信息可能更多
-n_clusters = 200
-n_models = 20 
+np.random.seed(100) 
+
+img_size = 256 #越小获取到的信息可能更多
+n_clusters = 600
+n_models = 15
 n_training_samples = 1024 # batch_size
 step_size = 3
+
+# np.random.seed(48) 
+# 0.19
+# img_size = 128 #越小获取到的信息可能更多
+# n_clusters = 200
+# n_models = 15 
+# n_training_samples = 1024 # batch_size
+# step_size = 3
 
 # 0.30 all data
 # img_size = 128
@@ -216,7 +237,8 @@ print('Training KMeans...')
 kmeans, visual_words = kMeans(imgVector_train, n_training_samples=n_training_samples, n_clusters=n_clusters)
 # KMeans_clusters_selctor(imgVector_train)
 print('Extracting features...')
-imgFeature_train= img2Feature(kmeans, trainingDatasetPath, img_counter, n_clusters)
+imgFeature_train = img2Feature(kmeans, trainingDatasetPath, img_counter, n_clusters)
+# idf, imgFeature_train = idf_and_norm(imgFeature_train)
 # imgVector_train = normalisation(imgFeature_train)
 # print(imgFeature_train.shape) #(1500, 500)
 print('Training OvRLCs...')
