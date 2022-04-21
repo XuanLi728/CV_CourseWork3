@@ -39,3 +39,11 @@ https://github.com/gurkandemir/Bag-of-Visual-Words
 https://github.com/AMANVerma28/Indoor-Outdoor-scene-classification
 
 https://github.com/buptchan/scene-classification
+
+- Run3
+  - https://blog.csdn.net/qq_36622009/article/details/102895411
+  - https://blog.csdn.net/cliukai/article/details/102525486
+  - https://blog.csdn.net/weixin_45666660/article/details/109104700
+  - （代码示例）https://www.kaggle.com/code/pierre54/bag-of-words-model-with-sift-descriptors/notebook
+  - (优化相关)https://github.com/shackenberg/phow_caltech101.py 
+  - （优化相关, ORB算法）https://zhuanlan.zhihu.com/p/261966288
