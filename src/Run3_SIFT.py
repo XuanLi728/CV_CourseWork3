@@ -43,6 +43,8 @@ labels = {
     }
 # https://github.com/beyzacevik/Scene-Recognition-using-SIFT  Ref
 
+# 读图片（readImg） ——> img2Kp_Des(特征提取) -> kmeans (得到词汇本 vocabulary) -> 把图像特征转换成histograms(img2Hist) -> 训练(svnClf)
+
 def histNorm(hist):
     scaler = MinMaxScaler().fit(hist)
     hist = scaler.transform(hist)
@@ -60,6 +62,7 @@ def readImg(path):
     # img = cv2.resize(img,(img_size,img_size),interpolation=cv2.INTER_NEAREST)
     return img
 
+# 特征提取
 def img2Kp_Des(Path,):
     desList = []
     labelVector = []
@@ -77,8 +80,8 @@ def img2Kp_Des(Path,):
             imgFullPath = os.path.join(dirFullPath, imgPath)
             img_mat = readImg(imgFullPath) # 读取图片
 
-            sift = cv2.xfeatures2d.SIFT_create()
-            # orb = cv2.ORB_create()
+            sift = cv2.xfeatures2d.SIFT_create() # (xxx, 128)
+            # orb = cv2.ORB_create() # (xxx, 32)
             kp, des = sift.detectAndCompute(img_mat,None)
 
             img_counter += 1
@@ -86,9 +89,9 @@ def img2Kp_Des(Path,):
             labelVector.append(class_index)
         # class_counter[class_index] += img_counter
 
-    return np.array(desList), np.array(labelVector), img_counter
+    return list2vstack(desList), list2vstack(labelVector), img_counter
 
-def list2vstack(desList):# TODO: 太慢了，看看怎么加速
+def list2vstack(desList):# TODO: 太慢了，看看怎么加速 (考虑多线程) eniops.rearrange
     start = desList[0]
     for des in desList[1:]:
         start = np.vstack((start,des))
@@ -99,7 +102,7 @@ def kMeans(data, n_training_samples=1024,n_clusters=200):
     model = MiniBatchKMeans(n_clusters=n_clusters, batch_size=n_training_samples,verbose=1)
     model.fit(data)
     closest, _ = pairwise_distances_argmin_min(model.cluster_centers_.tolist(), data)
-    vocabulary = data[closest]
+    vocabulary = data[closest] # 把聚类中心换成我们的数据
     # return model, model.cluster_centers_
     return model, vocabulary
 
@@ -110,7 +113,9 @@ def kMeans(data, n_training_samples=1024,n_clusters=200):
 #     # visualizer = KElbowVisualizer(model, k=(2,30),metric='silhouette', timings= True)
 #     visualizer.fit(data)        # Fit the data to the visualizer
 #     visualizer.show() 
-    
+
+# [1500张图片， 200个聚类中心（词汇条目）]
+
 def img2Hist(vocabulary, desList, image_counter, no_clusters,):
     img_hists = np.array([np.zeros(no_clusters) for _ in range(image_counter)])
 
@@ -121,8 +126,8 @@ def img2Hist(vocabulary, desList, image_counter, no_clusters,):
         # vq
         predict_idies, distance = vq.vq(feature, vocabulary)
         for idx in predict_idies:
-            img_hists[i][idx] += 1
-
+            img_hists[i][idx] += 1 # （1/len(predict_idies)）
+# vq 5个聚类中心，计算最近的数个，得到聚类中心set的下标（predict_idies）,
     return img_hists
 
 
@@ -176,8 +181,8 @@ n_clusters = 200
 n_training_samples = 1024 # batch_size
 
 imgVector_train, labelVector_train, img_counter = img2Kp_Des(trainingDatasetPath, )
-imgVector_train = list2vstack(imgVector_train)
-print(imgVector_train.shape) # (759487, 128)
+# imgVector_train = list2vstack(imgVector_train)
+# print(imgVector_train.shape) # (759487, 128)
 print('Training KMeans...')
 kmeans, visual_words = kMeans(imgVector_train, n_training_samples=n_training_samples, n_clusters=n_clusters)
 
