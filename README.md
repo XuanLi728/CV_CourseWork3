@@ -47,3 +47,4 @@ https://github.com/buptchan/scene-classification
   - （代码示例）https://www.kaggle.com/code/pierre54/bag-of-words-model-with-sift-descriptors/notebook
   - (优化相关)https://github.com/shackenberg/phow_caltech101.py 
   - （优化相关, ORB算法）https://zhuanlan.zhihu.com/p/261966288
+  - https://github.com/beyzacevik/Scene-Recognition-using-SIFT 
