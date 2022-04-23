@@ -118,18 +118,26 @@ def kMeans(data, n_training_samples=1024,n_clusters=200):
 
 def img2Hist(vocabulary, desList, image_counter, no_clusters,):
     img_hists = np.array([np.zeros(no_clusters) for _ in range(image_counter)])
-
-    for i in trange(image_counter, desc='extracting feature per image'):
-        feature = np.array(desList[i])
-        # print(feature.shape)
-        # feature = feature.reshape(-1, 128) # SIFT
-        # feature = feature.reshape(-1, 32) # orb
+    if image_counter == 1:
+        feature = np.array(desList)
         # vq
         predict_idies, distance = vq.vq(feature, vocabulary)
         for idx in predict_idies:
-            img_hists[i][idx] += 1 # （1/len(predict_idies)）
-# vq 5个聚类中心，计算最近的数个，得到聚类中心set的下标（predict_idies）,
-    return img_hists
+            img_hists[0][idx] += 1 # （1/len(predict_idies)）
+
+        return img_hists
+    else:
+        for i in trange(image_counter, desc='extracting feature per image'):
+            feature = np.array(desList[i])
+            # print(feature.shape)
+            # feature = feature.reshape(-1, 128) # SIFT
+            # feature = feature.reshape(-1, 32) # orb
+            # vq
+            predict_idies, distance = vq.vq(feature, vocabulary)
+            for idx in predict_idies:
+                img_hists[i][idx] += 1 # （1/len(predict_idies)）
+    # vq 5个聚类中心，计算最近的数个，得到聚类中心set的下标（predict_idies）,
+        return img_hists
 
 
 # https://blog.csdn.net/qq_36622009/article/details/102895411
@@ -163,8 +171,6 @@ def idf_and_norm(img_histogram_list):
 #     svm.fit(features, train_labels)
 #     return svm
 
-
-
 def svmClf(data, label):
 
     X_train, X_test, y_train, y_test = train_test_split(data, label, train_size=0.8, shuffle=True)
@@ -175,6 +181,27 @@ def svmClf(data, label):
     clf.fit(X_train, y_train)
 
     return clf, metrics.classification_report(y_test,clf.predict(X_test), target_names=labels)
+
+def test(Path, clf, visual_words, n_clusters):
+    results = []
+    fileNames = os.listdir(Path)
+    fileNames.sort(key= lambda x:int(x[:-4]))
+    for imgPath in tqdm(fileNames,desc='Exporting test results...'):
+        if(imgPath.startswith('.')): continue # Ignore the .DS_Stroe
+        imgFullPath = os.path.join(Path, imgPath)
+        sift = cv2.xfeatures2d.SIFT_create() # (xxx, 128)
+        # orb = cv2.ORB_create() # (xxx, 32)
+        kp, des = sift.detectAndCompute(readImg(imgFullPath),None)
+        # reshape the matrix to vector
+        imgFeature_test_CLF = img2Hist(visual_words, des, 1, n_clusters,)
+        y_predicted = clf.predict(imgFeature_test_CLF)
+        results.append(imgPath + ' ' + str(list(labels.keys())[list(labels.values()).index(y_predicted[0])]))
+    
+    f=open("results_run_3.txt","w")
+    
+    f.writelines('\n'.join(results))
+    f.close()
+    print('Done')
 
 np.random.seed(42) 
 
@@ -198,3 +225,4 @@ print('Training OvRLCs...')
 
 final_model, score = svmClf(imgFeature_train, labelVector_train,)
 print(score)
+test(testDatasetPath, final_model,visual_words,n_clusters)
