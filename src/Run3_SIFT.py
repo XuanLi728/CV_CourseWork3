@@ -64,7 +64,7 @@ def readImg(path):
 
 # 特征提取
 def img2Kp_Des(Path,):
-    desList = []
+    desDict = {}
     labelVector = []
 
     # class_counter = np.zeros((15, ), dtype=int)
@@ -84,12 +84,12 @@ def img2Kp_Des(Path,):
             # orb = cv2.ORB_create() # (xxx, 32)
             kp, des = sift.detectAndCompute(img_mat,None)
 
-            img_counter += 1
-            desList.append(des)
+            desDict[img_counter] = des
             labelVector.append(class_index)
+            img_counter += 1
         # class_counter[class_index] += img_counter
 
-    return list2vstack(desList), list2vstack(labelVector), img_counter
+    return desDict, list2vstack(labelVector), img_counter
 
 def list2vstack(desList):# TODO: 太慢了，看看怎么加速 (考虑多线程) eniops.rearrange
     start = desList[0]
@@ -98,7 +98,7 @@ def list2vstack(desList):# TODO: 太慢了，看看怎么加速 (考虑多线程
     return start
 
 def kMeans(data, n_training_samples=1024,n_clusters=200):
-    data = data.reshape(-1,128) # SIFT=128, ORB=32
+    # data = data.reshape(-1,128) # SIFT=128, ORB=32
     model = MiniBatchKMeans(n_clusters=n_clusters, batch_size=n_training_samples,verbose=1)
     model.fit(data)
     closest, _ = pairwise_distances_argmin_min(model.cluster_centers_.tolist(), data)
@@ -121,7 +121,8 @@ def img2Hist(vocabulary, desList, image_counter, no_clusters,):
 
     for i in trange(image_counter, desc='extracting feature per image'):
         feature = np.array(desList[i])
-        feature = feature.reshape(-1, 128) # SIFT
+        # print(feature.shape)
+        # feature = feature.reshape(-1, 128) # SIFT
         # feature = feature.reshape(-1, 32) # orb
         # vq
         predict_idies, distance = vq.vq(feature, vocabulary)
@@ -177,21 +178,22 @@ def svmClf(data, label):
 
 np.random.seed(42) 
 
-n_clusters = 200
+n_clusters = 500
 n_training_samples = 1024 # batch_size
 
 imgVector_train, labelVector_train, img_counter = img2Kp_Des(trainingDatasetPath, )
-# imgVector_train = list2vstack(imgVector_train)
-# print(imgVector_train.shape) # (759487, 128)
+imgVector_train_kmeans = list2vstack(list(imgVector_train.values()))
+
+# print(imgVector_train.shape) # (630380, 128)
 print('Training KMeans...')
-kmeans, visual_words = kMeans(imgVector_train, n_training_samples=n_training_samples, n_clusters=n_clusters)
+kmeans, visual_words = kMeans(imgVector_train_kmeans, n_training_samples=n_training_samples, n_clusters=n_clusters)
 
 # print(visual_words.shape)
 
 print('Extracting features...')
 # _, imgFeature_train = idf_and_norm(img2Hist(kmeans, imgVector_train, img_counter, n_clusters))
 imgFeature_train = img2Hist(visual_words, imgVector_train, img_counter, n_clusters)
-_, imgFeature_train = idf_and_norm(imgFeature_train)
+# _, imgFeature_train = idf_and_norm(imgFeature_train)
 print('Training OvRLCs...')
 
 final_model, score = svmClf(imgFeature_train, labelVector_train,)
