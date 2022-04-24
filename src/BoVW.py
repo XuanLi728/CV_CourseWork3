@@ -260,9 +260,9 @@ _, imgFeature_train_CLF = idf_and_norm(imgFeature_train_CLF)
 # imgVector_train = normalisation(imgFeature_train)
 # print(imgFeature_train.shape) #(1500, 500)
 print('Training OvRLCs...')
-final_model, score = OvRLCs(imgFeature_train_CLF, labelVector_train, n_models=n_models)
+final_model, score = OvRLCs(imgFeature_train_CLF, labelVector_train, n_models=n_models) # 42
 print(score)
-print('Exporting test results...')
-test(testDatasetPath, final_model,visual_words,n_clusters)
+# print('Exporting test results...')
+# test(testDatasetPath, final_model,visual_words,n_clusters)
 
 
