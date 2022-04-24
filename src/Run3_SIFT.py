@@ -1,20 +1,20 @@
 import os
 import re
 
+import albumentations as A
 import cv2
 import numpy as np
 import sklearn
+from PIL import ImageEnhance
 from scipy.cluster import vq
-from skimage.util.shape import view_as_blocks
 from sklearn import metrics
 from sklearn.cluster import MiniBatchKMeans
-from sklearn.ensemble import BaggingClassifier, StackingClassifier
+from sklearn.ensemble import StackingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import pairwise_distances_argmin_min
 from sklearn.model_selection import GridSearchCV, train_test_split
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from sklearn.svm import SVC, LinearSVC
-from sklearn.utils.random import sample_without_replacement
 from tqdm import tqdm, trange
 from yellowbrick.cluster import KElbowVisualizer
 
@@ -41,9 +41,58 @@ labels = {
     'OpenCountry':13, 
     'store':14
     }
+
+transform = A.Compose([
+    A.RandomCrop(width=256, height=256),
+    A.HorizontalFlip(p=0.5),
+    A.RandomBrightnessContrast(p=0.2),
+    A.Blur(p=0.3),
+])
+
+tta_transform = A.Compose([
+    A.HorizontalFlip(p=0.5),
+    A.RandomBrightnessContrast(p=0.2),
+    A.ShiftScaleRotate(p=0.5),
+    A.RandomRotate90(p=0.2),
+])
+
 # https://github.com/beyzacevik/Scene-Recognition-using-SIFT  Ref
 
 # 读图片（readImg） ——> img2Kp_Des(特征提取) -> kmeans (得到词汇本 vocabulary) -> 把图像特征转换成histograms(img2Hist) -> 训练(svnClf)
+
+# def proabilityControl(threshold):
+#     if np.random.random() > threshold:
+#         return True
+#     else:
+#         return False
+
+# # https://blog.csdn.net/Code_Mart/article/details/97918174
+# def dataAug(img,):
+#     imgAugSet = []
+#     imgAugSet.append(img)
+#     #直方图均衡化
+#     enhanced_gray = cv2.equalizeHist(img) if proabilityControl(0.5) else img 
+#     imgAugSet.append(enhanced_gray)
+#     #亮度增强
+#     image_brightened = ImageEnhance.Brightness(img).enhance(1.5) if proabilityControl(0.5) else img 
+#     imgAugSet.append(image_brightened)
+#     #色度增强
+#     image_colored = ImageEnhance.Color(img).enhance(1.5) if proabilityControl(0.5) else img 
+#     imgAugSet.append(image_colored)
+#     #对比度增强
+#     image_contrasted = ImageEnhance.Contrast(img).enhance(1.5) if proabilityControl(0.5) else img 
+#     imgAugSet.append(image_contrasted)
+#     #锐度增强
+#     image_sharped = ImageEnhance.Sharpness(img).enhance(1.5) if proabilityControl(0.5) else img
+#     imgAugSet.append(image_sharped)
+    
+#     return list(set(imgAugSet))
+
+def dataAug(img, times):
+    imgList = []
+    for _ in range(times):
+        imgList.append(transform(image=img)['image'])
+    return imgList
 
 def histNorm(hist):
     scaler = MinMaxScaler().fit(hist)
@@ -59,11 +108,11 @@ def normalisation(x):
 def readImg(path):
     img = cv2.imread(path,cv2.IMREAD_GRAYSCALE)
     img = normalisation(img) # 归一化 zero mean and unit variance
-    # img = cv2.resize(img,(img_size,img_size),interpolation=cv2.INTER_NEAREST)
+    img = cv2.resize(img,(img_size,img_size),interpolation=cv2.INTER_NEAREST)
     return img
 
 # 特征提取
-def img2Kp_Des(Path,):
+def img2Kp_Des(Path,times):
     desDict = {}
     labelVector = []
 
@@ -79,21 +128,21 @@ def img2Kp_Des(Path,):
             if(imgPath.startswith('.')): continue # Ignore the .DS_Stroe
             imgFullPath = os.path.join(dirFullPath, imgPath)
             img_mat = readImg(imgFullPath) # 读取图片
+            for augImg in dataAug(img_mat, times=times):
+                extractor = cv2.SIFT_create() # (xxx, 128)
+                # extractor = cv2.ORB_create() # (xxx, 32)
+                kp, des = extractor.detectAndCompute(augImg,None)
 
-            sift = cv2.xfeatures2d.SIFT_create() # (xxx, 128)
-            # orb = cv2.ORB_create() # (xxx, 32)
-            kp, des = sift.detectAndCompute(img_mat,None)
-
-            desDict[img_counter] = des
-            labelVector.append(class_index)
-            img_counter += 1
+                desDict[img_counter] = des
+                labelVector.append(class_index)
+                img_counter += 1
         # class_counter[class_index] += img_counter
 
     return desDict, list2vstack(labelVector), img_counter
 
 def list2vstack(desList):# TODO: 太慢了，看看怎么加速 (考虑多线程) eniops.rearrange
     start = desList[0]
-    for des in desList[1:]:
+    for des in tqdm(desList[1:],desc='list stacking'):
         start = np.vstack((start,des))
     return start
 
@@ -182,6 +231,29 @@ def svmClf(data, label):
 
     return clf, metrics.classification_report(y_test,clf.predict(X_test), target_names=labels)
 
+def OvRLCs(data, label, n_models):
+
+    X_train, X_test, y_train, y_test = train_test_split(data, label, train_size=0.8, shuffle=True)
+    estimators = []
+    for index in range(n_models):
+        # model = ('svc_'+str(index), SVC(C=0.5, gamma=0.1))
+        # model = ('lr_'+str(index), LinearSVC(multi_class='ovr'))
+        model = ('lr_'+str(index), LogisticRegression())
+        estimators.append(model)
+
+    clf = StackingClassifier(
+        estimators=estimators, 
+        final_estimator=LogisticRegression(),
+        cv=5,
+        verbose=1,
+        n_jobs=4,
+    )
+    clf.fit(X_train, y_train)
+    
+    return clf, metrics.classification_report(y_test,clf.predict(X_test), target_names=labels)
+
+# TODO: 添加TTA
+
 def test(Path, clf, visual_words, n_clusters):
     results = []
     fileNames = os.listdir(Path)
@@ -205,10 +277,12 @@ def test(Path, clf, visual_words, n_clusters):
 
 np.random.seed(42) 
 
+img_size=256
 n_clusters = 500
 n_training_samples = 1024 # batch_size
+Aug_times = 3 # 2->69; 3->81
 
-imgVector_train, labelVector_train, img_counter = img2Kp_Des(trainingDatasetPath, )
+imgVector_train, labelVector_train, img_counter = img2Kp_Des(trainingDatasetPath, Aug_times)
 imgVector_train_kmeans = list2vstack(list(imgVector_train.values()))
 
 # print(imgVector_train.shape) # (630380, 128)
@@ -223,6 +297,7 @@ imgFeature_train = img2Hist(visual_words, imgVector_train, img_counter, n_cluste
 # _, imgFeature_train = idf_and_norm(imgFeature_train)
 print('Training OvRLCs...')
 
-final_model, score = svmClf(imgFeature_train, labelVector_train,)
+final_model, score = svmClf(imgFeature_train, labelVector_train,) # 69
+# final_model, score = OvRLCs(imgFeature_train, labelVector_train,15) # 41
 print(score)
-test(testDatasetPath, final_model,visual_words,n_clusters)
+# test(testDatasetPath, final_model,visual_words,n_clusters)
