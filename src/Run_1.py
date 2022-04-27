@@ -70,9 +70,10 @@ def train(imgFeature_train, labelVector_train, n_neighbors):
     clf = KNeighborsClassifier(n_neighbors=n_neighbors)
     clf.fit(X_train, y_train)
     y_predicted = clf.predict(X_test)
-    accuracy = np.mean(labelVector_train == y_predicted) * 100
-    print(accuracy) # 30.8
-    print(metrics.classification_report(y_predicted, y_test, target_names=labels))
+    # accuracy = np.mean(labelVector_train == y_predicted) * 100
+    accuracy = metrics.accuracy_score(y_predicted,y_test)
+    # print(accuracy) # 30.8
+    # print(metrics.classification_report(y_predicted, y_test, target_names=labels))
     return clf, accuracy
 
 def Val(groudTruth, predicted):
@@ -103,12 +104,21 @@ imgFeature_train, labelVector_train = img2matrix(trainingDatasetPath)
 # x_train, x_val, y_train, y_val = train_test_split(imgFeature, labelVector, train_size=0.8, random_state=42)
 # clf, scores = train(x_train, x_val, y_train, y_val)
 # print(scores)
-np.random.seed(7)
-n_neighbors=5 # 25 Acc
-clf, accuracy = train(imgFeature_train, labelVector_train, n_neighbors)
+np.random.seed(42)
+# n_neighbors=5 # 25 Acc
+# clf, accuracy = train(imgFeature_train, labelVector_train, n_neighbors)
 
 # test(testDatasetPath, clf)
 
 # print(len(os.listdir(testDatasetPath))) # 总共2985个测试样本
 
+import tqdm
 
+acc = []
+for n_neighbours in tqdm.tqdm(np.arange(start=1,stop=100)):
+    clf, accuracy = train(imgFeature_train, labelVector_train, n_neighbours)
+    acc.append(accuracy)
+import matplotlib.pyplot as plt
+
+plt.plot(np.arange(1,100), acc)
+plt.show()

@@ -210,7 +210,7 @@ def test(Path, clf, visual_words, n_clusters):
         # reshape the matrix to vector
         imgFeature_test_CLF = img2Hist(visual_words, normalisation(split_patchs(readImg(imgFullPath), patch_size=8)), 1, n_clusters)
         y_predicted = clf.predict(imgFeature_test_CLF)
-        results.append(imgPath + ' ' + str(list(labels.keys())[list(labels.values()).index(y_predicted[0])]))
+        results.append(imgPath + ' ' + str(list(labels.keys())[list(labels.values()).index(y_predicted[0])]).lower())
     
     f=open("results_run_2.txt","w")
     
@@ -262,7 +262,7 @@ _, imgFeature_train_CLF = idf_and_norm(imgFeature_train_CLF)
 print('Training OvRLCs...')
 final_model, score = OvRLCs(imgFeature_train_CLF, labelVector_train, n_models=n_models) # 42
 print(score)
-# print('Exporting test results...')
-# test(testDatasetPath, final_model,visual_words,n_clusters)
+print('Exporting test results...')
+test(testDatasetPath, final_model,visual_words,n_clusters)
 
 

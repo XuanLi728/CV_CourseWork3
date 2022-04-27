@@ -46,7 +46,6 @@ transform = A.Compose([
     A.RandomCrop(width=256, height=256),
     A.HorizontalFlip(p=0.5),
     A.RandomBrightnessContrast(p=0.2),
-    A.Blur(p=0.3),
 ])
 
 tta_transform = A.Compose([
@@ -261,13 +260,13 @@ def test(Path, clf, visual_words, n_clusters):
     for imgPath in tqdm(fileNames,desc='Exporting test results...'):
         if(imgPath.startswith('.')): continue # Ignore the .DS_Stroe
         imgFullPath = os.path.join(Path, imgPath)
-        sift = cv2.xfeatures2d.SIFT_create() # (xxx, 128)
+        sift = cv2.SIFT_create() # (xxx, 128)
         # orb = cv2.ORB_create() # (xxx, 32)
         kp, des = sift.detectAndCompute(readImg(imgFullPath),None)
         # reshape the matrix to vector
         imgFeature_test_CLF = img2Hist(visual_words, des, 1, n_clusters,)
         y_predicted = clf.predict(imgFeature_test_CLF)
-        results.append(imgPath + ' ' + str(list(labels.keys())[list(labels.values()).index(y_predicted[0])]))
+        results.append(imgPath + ' ' + str(list(labels.keys())[list(labels.values()).index(y_predicted[0])]).lower())
     
     f=open("results_run_3.txt","w")
     
@@ -280,7 +279,7 @@ np.random.seed(42)
 img_size=256
 n_clusters = 500
 n_training_samples = 1024 # batch_size
-Aug_times = 3 # 2->69; 3->81
+Aug_times = 3 # 2->69; 3->81； 1->48
 
 imgVector_train, labelVector_train, img_counter = img2Kp_Des(trainingDatasetPath, Aug_times)
 imgVector_train_kmeans = list2vstack(list(imgVector_train.values()))
@@ -297,7 +296,7 @@ imgFeature_train = img2Hist(visual_words, imgVector_train, img_counter, n_cluste
 # _, imgFeature_train = idf_and_norm(imgFeature_train)
 print('Training OvRLCs...')
 
-final_model, score = svmClf(imgFeature_train, labelVector_train,) # 69
+final_model, score = svmClf(imgFeature_train, labelVector_train,) # 81
 # final_model, score = OvRLCs(imgFeature_train, labelVector_train,15) # 41
 print(score)
-# test(testDatasetPath, final_model,visual_words,n_clusters)
+test(testDatasetPath, final_model,visual_words,n_clusters)
