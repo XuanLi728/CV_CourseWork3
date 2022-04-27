@@ -33,13 +33,12 @@ testDatasetPath = 'data/testing'
 
 def readImg(path):
     img = cv2.imread(path,cv2.IMREAD_GRAYSCALE)
-    new_length = min(img.shape[0], img.shape[1])
-    # crop
-    center_x = img.shape[0] // 2
-    center_y = img.shape[1] // 2
-    x = center_x - new_length//2
-    y = center_y - new_length//2
-    img = img[y:y+new_length, x:x+new_length]
+    length = min(img.shape[0], img.shape[1])
+
+    x = img.shape[1] // 2 - length//2
+    y = img.shape[0] // 2 - length//2
+
+    img = img[y:y+length, x:x+length]
     img = cv2.resize(img,(16,16),interpolation=cv2.INTER_NEAREST)
     return img
 
