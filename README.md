@@ -8,14 +8,14 @@
 - [X] Run 1 KNN
   - 当前 Acc: 25% n=5
   - 交叉验证Acc 25%, cv=5, train_size=0.9
-  - [ ] 注释
+  - [X] 注释
   - [ ] 添加preprocess
-  - [ ] 代码结构美化
+  - [X] 代码结构美化
   - [ ] 添加PCA，KNN调参
 
-- [ ] Run 2 Bag-of-visual-words
+- [X] Run 2 Bag-of-visual-words
   - 当前 Acc: 0.06 (???)
-  - [ ] Debug, 找出表现差的原因
+  - [X] Debug, 找出表现差的原因
   - [X] 添加preprocess
   - [X] 添加滑动窗口patches提取
   - [X] 添加Img2Vector
