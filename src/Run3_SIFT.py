@@ -1,5 +1,4 @@
 import os
-import re
 
 import albumentations as A
 import cv2
@@ -17,9 +16,6 @@ from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from sklearn.svm import SVC, LinearSVC
 from tqdm import tqdm, trange
 from yellowbrick.cluster import KElbowVisualizer
-
-# TODO: 借鉴下以下的思路
-# https://github1s.com/FrankWJW/SceneRecognition/blob/master/code/cv3/patch_vocabulary.m
 
 trainingDatasetPath = 'data/training'
 testDatasetPath = 'data/testing'
@@ -47,8 +43,11 @@ np.random.seed(42)
 img_size=256
 n_clusters = 500
 n_training_samples = 1024 # batch_size
-Aug_times = 3 # 2->69; 3->81； 1->48
+Aug_times = 3 # 1->48; 2->69; 3->81; 
 
+'''
+    Image Augmentation
+'''
 
 transform = A.Compose([
     A.RandomCrop(width=256, height=256),
@@ -56,6 +55,8 @@ transform = A.Compose([
     A.RandomBrightnessContrast(p=0.2),
 ])
 
+# not using 
+# test time augmentation
 tta_transform = A.Compose([
     A.HorizontalFlip(p=0.5),
     A.RandomBrightnessContrast(p=0.2),
@@ -63,46 +64,23 @@ tta_transform = A.Compose([
     A.RandomRotate90(p=0.2),
 ])
 
-# https://github.com/beyzacevik/Scene-Recognition-using-SIFT  Ref
-
 # 读图片（readImg） ——> img2Kp_Des(特征提取) -> kmeans (得到词汇本 vocabulary) -> 把图像特征转换成histograms(img2Hist) -> 训练(svnClf)
 
-# def proabilityControl(threshold):
-#     if np.random.random() > threshold:
-#         return True
-#     else:
-#         return False
-
-# # https://blog.csdn.net/Code_Mart/article/details/97918174
-# def dataAug(img,):
-#     imgAugSet = []
-#     imgAugSet.append(img)
-#     #直方图均衡化
-#     enhanced_gray = cv2.equalizeHist(img) if proabilityControl(0.5) else img 
-#     imgAugSet.append(enhanced_gray)
-#     #亮度增强
-#     image_brightened = ImageEnhance.Brightness(img).enhance(1.5) if proabilityControl(0.5) else img 
-#     imgAugSet.append(image_brightened)
-#     #色度增强
-#     image_colored = ImageEnhance.Color(img).enhance(1.5) if proabilityControl(0.5) else img 
-#     imgAugSet.append(image_colored)
-#     #对比度增强
-#     image_contrasted = ImageEnhance.Contrast(img).enhance(1.5) if proabilityControl(0.5) else img 
-#     imgAugSet.append(image_contrasted)
-#     #锐度增强
-#     image_sharped = ImageEnhance.Sharpness(img).enhance(1.5) if proabilityControl(0.5) else img
-#     imgAugSet.append(image_sharped)
-    
-#     return list(set(imgAugSet))
+# #直方图均衡化
+# enhanced_gray = cv2.equalizeHist(img) if proabilityControl(0.5) else img 
+# imgAugSet.append(enhanced_gray)
 
 
 '''
-from dataset store image in a list, And amplify according to parameter data
+Data Augmentation and Data Multiplication. 
+Each time, apply data augmentation to the same image, 
+append the processed image in imgList as a new image.
+
 input:
-    img: image need to be store
-    times:int, Data amplification times
+    img: image need to be store (ndarray)
+    times:int, Data amplification times (int)
 output:
-    imgList: list, list of image from dataset
+    imgList: list, list of image(ndarray)
 '''
 
 def dataAug(img, times):
@@ -114,9 +92,9 @@ def dataAug(img, times):
 '''
 use MinMaxScaler normalize histogram
 input:
-    hist: Histogram before normalize
+    hist: Histogram before normalize (ndarray)
 output:
-    hist: histogram after normalize
+    hist: histogram after normalize (ndarray)
 '''
 
 def histNorm(hist):
@@ -125,11 +103,11 @@ def histNorm(hist):
     return hist
 
 '''
-Use MinMaxScaler normalization data
+Use StandardScaler normalization data
 input:
-    x:the data should be normalize
+    x: data needs to be normalize (ndarray)
 output:
-    dta been normalized
+    image: data that has been normalized (ndarray)
 '''
 def normalisation(x):  
     scaler = StandardScaler().fit(x)
@@ -140,9 +118,9 @@ def normalisation(x):
 '''
 get image data
 input: 
-    path:string, the path store images
+    path:the path of image (string)
 output:
-    img:ndarray, images 
+    img: images (ndarray)
 '''
 def readImg(path):
     img = cv2.imread(path,cv2.IMREAD_GRAYSCALE)
@@ -153,12 +131,12 @@ def readImg(path):
 '''
 Feature extraction
 input:
-    path:path of dataset
-    times:int, Data amplification times
+    path:path of dataset (string)
+    times: Data amplification times (int)
 output:
-    imgVector: ndarray, vector shape data of image
-    labelvector: ndarray, label of image
-    img_counter: the number of image be change to vector
+    imgVector: vector shape data of image (ndarray)
+    labelvector: label of image (ndarray)
+    img_counter: total numer of images (int)
 '''
 def img2Kp_Des(Path,times):
     desDict = {}
@@ -184,7 +162,6 @@ def img2Kp_Des(Path,times):
                 desDict[img_counter] = des
                 labelVector.append(class_index)
                 img_counter += 1
-        # class_counter[class_index] += img_counter
 
     return desDict, list2vstack(labelVector), img_counter
 
@@ -193,9 +170,12 @@ two way to change list[ndarray] type data to ndarray
 list2vstack: using vstack
 list2vstack1: using normal way with change type and reshape
 input:
-    desList: list[ndarray], data that should be change
+    desList: data that should be change (list[ndarray])
 output:
-    start: ndarray, data that change to ndarray type
+    start: data that change to ndarray type (ndarray ([[n1,128],
+                                                        [n1,128],
+                                                        ...
+                                                        [m1, 128]]))
 '''
 def list2vstack(desList):
     start = desList[0]
@@ -215,12 +195,12 @@ def list2vstack1(desList):
 '''
 Use miniBatch way to run KMeans 
 input:
-    data: ndarray, data of calssification
-    n_training_sample: int, the number of training sample
-    n_clusters:int, the number of class
+    data: stacking SIFT features (ndarray)
+    n_training_sample: the number of training sample, i.e. batch size (int)
+    n_clusters: the number of class (int)
 output:
-    model:the K means model
-    vocabulary: Vocabularies correspond to categories of image slices
+    model: trained K means model (sklearn clf object: Fitted estimator.)
+    vocabulary: Vocabularies correspond to categories of SIFT features, i.e. cluster centres (ndarray [n_clusters, 128])
 '''
 def kMeans(data, n_training_samples=1024,n_clusters=200):
     # data = data.reshape(-1,128) # SIFT=128, ORB=32
@@ -241,16 +221,17 @@ def kMeans(data, n_training_samples=1024,n_clusters=200):
 
 
 '''
-[1500 images, 200 clustering centers (vocabulary items)]
+[1500 images, 200(hyperparamter) clustering centers (vocabulary items)]
+
 Use vq.vq to get histogram of image
-Vq 5 cluster centers, calculate the nearest number, get the subscript of cluster center set（predict_idies）
+Vq 5 cluster centers, calculate the nearest number, get the subscript of cluster center set(predict_idies)
 input:
-    vocabulary: Vocabularies correspond to categories of image slices
-    desList: list[ndarray], data 
-    image_counter:int, number of image
-    no_clusters: int, number of class
+    vocabulary: Vocabularies correspond to categories of image slices (ndarray [no_clusters, 128])
+    desList: ndarray of SIFT features (ndarray) 
+    image_counter: number of image (int)
+    no_clusters: number of class (int)
 output:
-    img_hists: image histogram
+    img_hists: image histogram (ndarray, [image_counter, no_clusters])
 '''
 def img2Hist(vocabulary, desList, image_counter, no_clusters,):
     img_hists = np.array([np.zeros(no_clusters) for _ in range(image_counter)])
@@ -280,10 +261,10 @@ The occurrence frequency of the word in the dataset is regarded as a weight,
 and the word frequency vector is processed once
 The word frequency vector is normalized and then compared
 input:
-    img_historgram_list: list, the histograms of image
+    img_historgram_list: the histograms of image (ndarray, [image_counter, no_clusters])
 output:
-    idf:Word frequency vector
-    img_book_list:The processed IMg_book_list is saved to the model
+    idf:Word frequency vector (not using in the rest code)
+    img_book_list: codebook(histograms) for training (ndarray, [image_counter, no_clusters])
 '''
 def idf_and_norm(img_histogram_list):
     words_occurrences = np.sum((img_histogram_list > 0) * 1, axis=0)  # 求出每个word在所有图片中出现的频数
@@ -294,6 +275,9 @@ def idf_and_norm(img_histogram_list):
     img_book_list = sklearn.preprocessing.normalize(img_book_list, norm='l2')  # 归一化
     return idf, img_book_list
 
+'''
+SVM hyperparamters tunning functions
+'''
 
 # def svcParamSelection(X, y, nfolds):
 #     # best : 0.1, 0.5
@@ -314,15 +298,16 @@ def idf_and_norm(img_histogram_list):
 #     svm = SVC(C =  C_param, gamma = gamma_param,)
 #     svm.fit(features, train_labels)
 #     return svm
+
 '''
-by using train_test_split to randomly divide training set and test set 
-and train model 
+using train_test_split to randomly divide training set and test set 
+to train and val the model 
 input:
-    data: ndarray, input data to be divide to training set and test set
-    label: label of each picture in data
+    data: input data to be divide to training set and test set (ndarray)
+    label: label of each picture in data (ndarray)
 output:
-    clf: Trained model
-    report:Classification report of training process
+    clf: Trained model (sklearn clf object: Fitted estimator.)
+    report: Classification report of training process (string)
 '''
 def svmClf(data, label):
 
@@ -333,18 +318,19 @@ def svmClf(data, label):
     clf = make_pipeline(StandardScaler(), SVC(gamma='auto')) 
     clf.fit(X_train, y_train)
 
-    return clf, metrics.classification_report(y_test,clf.predict(X_test), target_names=labels)
-
+    training_acc = metrics.classification_report(clf.predict(X_train), y_train, target_names=labels)
+    val_acc = metrics.classification_report(clf.predict(X_test), y_test, target_names=labels)
+    return clf, training_acc, val_acc
 '''
-by using train_test_split to randomly divide training set and test set 
+using train_test_split to randomly divide training set and test set 
 and train model 
 input:
     data: ndarray, input data to be divide to training set and test set
     label: label of each picture in data
     n_models: number of models(only use in training mutiple model)
 output:
-    clf: Trained model
-    report:Classification report of training process
+    clf: Trained model (sklearn clf object: Fitted estimator.)
+    report:Classification report of training process (string)
 '''
 def OvRLCs(data, label, n_models):
 
@@ -364,8 +350,10 @@ def OvRLCs(data, label, n_models):
         n_jobs=4,
     )
     clf.fit(X_train, y_train)
-    
-    return clf, metrics.classification_report(y_test,clf.predict(X_test), target_names=labels)
+
+    train_report = metrics.classification_report(y_train,clf.predict(X_train), target_names=labels)
+    val_report =  metrics.classification_report(y_test,clf.predict(X_test), target_names=labels)
+    return clf, train_report, val_report
 
 '''
 test model and get a txt test result
@@ -389,8 +377,14 @@ def test(Path, clf, visual_words, n_clusters):
         # reshape the matrix to vector
         imgFeature_test_CLF = img2Hist(visual_words, des, 1, n_clusters,)
         y_predicted = clf.predict(imgFeature_test_CLF)
-        results.append(imgPath + ' ' + str(list(labels.keys())[list(labels.values()).index(y_predicted[0])]).lower())
-    
+        results.append(
+            imgPath + ' ' + str(
+                list(labels.keys())[
+                        list(labels.values()).index(y_predicted[0])
+                    ]
+                ).lower()
+            )
+
     f=open("results_run_3.txt","w")
     
     f.writelines('\n'.join(results))
@@ -405,18 +399,17 @@ def main():
     # print(imgVector_train.shape) # (630380, 128)
     print('Training KMeans...')
     kmeans, visual_words = kMeans(imgVector_train_kmeans, n_training_samples=n_training_samples, n_clusters=n_clusters)
-
     # print(visual_words.shape)
 
     print('Extracting features...')
-    # _, imgFeature_train = idf_and_norm(img2Hist(kmeans, imgVector_train, img_counter, n_clusters))
     imgFeature_train = img2Hist(visual_words, imgVector_train, img_counter, n_clusters)
     # _, imgFeature_train = idf_and_norm(imgFeature_train)
     print('Training OvRLCs...')
 
-    final_model, score = svmClf(imgFeature_train, labelVector_train,) # 81
+    final_model, train_score, val_score = svmClf(imgFeature_train, labelVector_train,) # 81
+    print(train_score)
+    print(val_score) 
     # final_model, score = OvRLCs(imgFeature_train, labelVector_train,15) # 41
-    print(score)
     test(testDatasetPath, final_model,visual_words,n_clusters)
 
 if __name__ == "__main__":

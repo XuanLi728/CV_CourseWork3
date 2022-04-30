@@ -1,4 +1,5 @@
 import os
+
 import cv2
 import numpy as np
 import sklearn
@@ -6,18 +7,14 @@ from scipy.cluster import vq
 from skimage.util.shape import view_as_blocks
 from sklearn import metrics
 from sklearn.cluster import MiniBatchKMeans
-from sklearn.ensemble import BaggingClassifier, StackingClassifier
+from sklearn.ensemble import StackingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import pairwise_distances_argmin_min
 from sklearn.model_selection import GridSearchCV, train_test_split
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from sklearn.svm import SVC, LinearSVC
-from sklearn.utils.random import sample_without_replacement
 from tqdm import tqdm, trange
 from yellowbrick.cluster import KElbowVisualizer
-
-# TODO: 借鉴下以下的思路
-# https://github1s.com/FrankWJW/SceneRecognition/blob/master/code/cv3/patch_vocabulary.m
 
 #Adjustable global parameters
 trainingDatasetPath = 'data/training'
@@ -42,11 +39,11 @@ labels = {
     }
 
 np.random.seed(42) 
-img_size = 256 #The smaller you are, the more information you get
+img_size = 256
 n_clusters = 500
 n_models = 15
 n_training_samples = 1024 # batch_size
-step_size = 3
+step_size = 3 # for Pyramid downsampling in 'split_patchs'
 
 '''
 Use MinMaxScaler normalization data
@@ -103,13 +100,13 @@ def split_patchs(img, patch_size=8, down_sample_rate=2, step_size=2):
 
     for block in np.reshape(view_as_blocks(img, block_shape=(patch_size, patch_size)), (-1, patch_size, patch_size)): # Split the image into 8x8 Windows
         patches.append(np.reshape(block[::4,::4], (-1,))) # Every 4 samples, straightened (no overlap)
-    # for epoch in range(down_sample_rate+1): # 金字塔降采样
+    # for epoch in range(down_sample_rate+1): # Pyramid downsampling
     #     if epoch == 0:
     #         continue
     #     else:
     #         img = cv2.pyrDown(img)
     #     for patch in sliding_window(img, step_size, (patch_size,patch_size)):
-    #         patches.append(np.reshape(patch[::4,::4], (-1,))) # 每隔4个采样，拉直 (有重叠)
+    #         patches.append(np.reshape(patch[::4,::4], (-1,))) 
     return np.array(patches)
 
 '''
@@ -136,11 +133,10 @@ def img2vectors(Path, step_size):
         for imgPath in os.listdir(dirFullPath):
             if(imgPath.startswith('.')): continue # Ignore the .DS_Stroe
             imgFullPath = os.path.join(dirFullPath, imgPath)
-            img_vectors = normalisation(split_patchs(readImg(imgFullPath), patch_size=8)) # 每张图片分割为 n x (4, )的vector
+            img_vectors = normalisation(split_patchs(readImg(imgFullPath), patch_size=8)) # image -> n x (4, ) vector
             imgVector[img_counter] = img_vectors
             labelVector.append(class_index)
             img_counter += 1
-        # class_counter[class_index] += img_counter
     return imgVector, np.array(labelVector), img_counter, 
 
 '''
@@ -157,7 +153,8 @@ def list2vstack(desList):
     for des in desList[1:]:
         start = np.vstack((start,des))
     return start
-def list2vstack1(desList):
+
+def list2vstack1(desList): # faster, higher accuracy
     start = desList[0].tolist()
     for des in desList:
         for i in des:
@@ -165,6 +162,7 @@ def list2vstack1(desList):
     start = np.array(start)
     start.reshape(-1,128)
     return start
+
 '''
 Use miniBatch way to run KMeans 
 input:
@@ -176,7 +174,6 @@ output:
     vocabulary: Vocabularies correspond to categories of image slices
 '''
 def kMeans(data, n_training_samples=1024,n_clusters=200):
-    # data = data.reshape(-1,128) # SIFT=128, ORB=32
     model = MiniBatchKMeans(n_clusters=n_clusters, batch_size=n_training_samples,verbose=1)
     model.fit(data)
     closest, _ = pairwise_distances_argmin_min(model.cluster_centers_.tolist(), data)
@@ -186,7 +183,7 @@ def kMeans(data, n_training_samples=1024,n_clusters=200):
 
 
 '''
-[1500 images, 200 clustering centers (vocabulary items)]
+[1500 images, 200(hyperparamter) clustering centers (vocabulary items)]
 Use vq.vq to get histogram of image
 Vq 5 cluster centers, calculate the nearest number, get the subscript of cluster center set（predict_idies）
 input:
@@ -210,9 +207,6 @@ def img2Hist(vocabulary, desList, image_counter, no_clusters,):
     else:
         for i in trange(image_counter, desc='extracting feature per image'):
             feature = np.array(desList[i])
-            # print(feature.shape)
-            # feature = feature.reshape(-1, 128) # SIFT
-            # feature = feature.reshape(-1, 32) # orb
             # vq
             predict_idies, distance = vq.vq(feature, vocabulary)
             for idx in predict_idies:
@@ -221,7 +215,7 @@ def img2Hist(vocabulary, desList, image_counter, no_clusters,):
         return img_hists
 
 
-# https://blog.csdn.net/qq_36622009/article/details/102895411
+# ref from https://blog.csdn.net/qq_36622009/article/details/102895411
 
 '''
 The occurrence frequency of the word in the dataset is regarded as a weight, 
@@ -241,6 +235,10 @@ def idf_and_norm(img_histogram_list):
     img_book_list = img_histogram_list * idf
     img_book_list = sklearn.preprocessing.normalize(img_book_list, norm='l2')  # normalized
     return idf, img_book_list
+
+'''
+SVM hyperparamters tunning functions
+'''
 
 # def svcParamSelection(X, y, nfolds):
 #     # best : 0.1, 0.5
@@ -282,9 +280,7 @@ def OvRLCs(data, label, n_models):
         # model = ('lr_'+str(index), LinearSVC(multi_class='ovr'))
         model = ('lr_'+str(index), LogisticRegression())
         estimators.append(model)
-        # model = ('svc_'+str(index), LinearSVC(multi_class='ovr'))
-        # estimators.append(model)
-
+        
     clf = StackingClassifier(
         estimators=estimators, 
         final_estimator=LogisticRegression(),
@@ -293,24 +289,17 @@ def OvRLCs(data, label, n_models):
         n_jobs=4,
     )
 
-    # clf = BaggingClassifier(
-    #     # estimators=estimators, 
-    #     # final_estimator=LinearSVC(),
-    #     n_estimators=n_models,
-    #     # cv=5,
-    #     verbose=1,
-    #     n_jobs=4,
-    # )
     clf.fit(X_train, y_train)
     # clf = findSVM(X_train, y_train)
-
-    return clf, metrics.classification_report(y_test,clf.predict(X_test), target_names=labels)
+    training_acc = metrics.classification_report(clf.predict(X_train), y_train, target_names=labels)
+    val_acc = metrics.classification_report(clf.predict(X_test), y_test, target_names=labels)
+    return clf, training_acc, val_acc
 
 '''
 test model and get a txt test result
 input:
-    Path: path of dataset
-    clf: Trained model
+    Path: path of dataset (string)
+    clf: Trained model (sklearn clf object: Fitted estimator. )
     visual_words:Visual word vector dictionary
     n_clusters: number of clusters
    
@@ -324,39 +313,29 @@ def test(Path, clf, visual_words, n_clusters):
         imgFullPath = os.path.join(Path, imgPath)
 
         # reshape the matrix to vector
-        imgFeature_test_CLF = img2Hist(visual_words, normalisation(split_patchs(readImg(imgFullPath), patch_size=8)), 1, n_clusters)
+        imgFeature_test_CLF = img2Hist(
+            visual_words, 
+            normalisation(split_patchs(
+                readImg(imgFullPath), patch_size=8)
+                ), 
+            image_counter=1,
+            no_clusters=n_clusters)
         y_predicted = clf.predict(imgFeature_test_CLF)
-        results.append(imgPath + ' ' + str(list(labels.keys())[list(labels.values()).index(y_predicted[0])]).lower())
+        results.append(
+            imgPath + ' ' + str(
+                list(labels.keys())[
+                        list(labels.values()).index(y_predicted[0])
+                    ]
+                ).lower()
+            )
     
     f=open("results_run_2.txt","w")
     
     f.writelines('\n'.join(results))
     f.close()
     print('Done')
+
 def main():
-
-
-    # np.random.seed(48) 
-    # 0.19
-    # img_size = 128 #越小获取到的信息可能更多
-    # n_clusters = 200
-    # n_models = 15 
-    # n_training_samples = 1024 # batch_size
-    # step_size = 3
-
-    # 0.30 all data
-    # img_size = 128
-    # n_clusters = 200
-    # n_models = 20 
-    # n_training_samples = 2048
-    # step_size=2
-
-    # 0.29
-    # img_size = 128
-    # n_clusters = 100
-    # n_models = 20 
-    # n_training_samples = 1024
-    # step_size=2
 
     imgVector_train, labelVector_train, img_counter, = img2vectors(trainingDatasetPath, step_size=step_size)
     imgVector_train_kmeans = list2vstack1(list(imgVector_train.values()))
@@ -368,12 +347,14 @@ def main():
     imgFeature_train_CLF = img2Hist(visual_words, imgVector_train, img_counter, n_clusters)
     _, imgFeature_train_CLF = idf_and_norm(imgFeature_train_CLF)
     # imgVector_train = normalisation(imgFeature_train)
-    # print(imgFeature_train.shape) #(1500, 500)
     print('Training OvRLCs...')
-    final_model, score = OvRLCs(imgFeature_train_CLF, labelVector_train, n_models=n_models) # 42
-    print(score)
+    final_model, train_score, val_score = OvRLCs(imgFeature_train_CLF, labelVector_train, n_models=n_models) # 42
+    print(train_score)
+    print(val_score)
+
     print('Exporting test results...')
     test(testDatasetPath, final_model,visual_words,n_clusters)
+
 
 if __name__ == "__main__":
     main()

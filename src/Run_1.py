@@ -1,11 +1,11 @@
 
 import os
-import tqdm
+
 import cv2
 import numpy as np
+import tqdm
 from sklearn import metrics
-from sklearn.model_selection import (ShuffleSplit, cross_validate,
-                                     train_test_split)
+from sklearn.model_selection import train_test_split
 from sklearn.neighbors import KNeighborsClassifier
 
 labels = {
@@ -39,7 +39,7 @@ output:
 def readImg(path):
     img = cv2.imread(path,cv2.IMREAD_GRAYSCALE)
     length = min(img.shape[0], img.shape[1])
-
+    # centre crop
     x = img.shape[1] // 2 - length//2
     y = img.shape[0] // 2 - length//2
 
@@ -49,8 +49,8 @@ def readImg(path):
 
 
 '''
-get image feature and lavel
-read all image and get this images' feature and images' Corresponding label
+get image features and labels
+read all image and get this images' features and images' Corresponding labels
 input: 
     path:string, the path store images
 output:
@@ -59,7 +59,6 @@ output:
 '''
 def img2matrix(Path):
 
-    
     imgFeature = []
     labelVector = []
     for dirName in os.listdir(Path):
@@ -80,7 +79,7 @@ def img2matrix(Path):
 
 '''
 training model
-split the datasets into training and testing parts，then feed to  a knn classifier 
+split the datasets into training and testing parts, then feed to  a knn classifier 
 input: 
     imgFeature_train: ndarray, image feature of training set
     labelVector_train: ndarray, label of training set
@@ -92,34 +91,16 @@ output:
 def train(imgFeature_train, labelVector_train, n_neighbors):
     
     X_train, X_test, y_train, y_test = train_test_split(imgFeature_train, labelVector_train, train_size=0.9, shuffle=True)
-    # clf = KNeighborsClassifier()
-    # clf.fit(x_train, y_train)
-    # y_predicted = clf.predict(x_val)
-    # accuracy = np.mean(y_val == y_predicted) * 100
+
     clf = KNeighborsClassifier(n_neighbors=n_neighbors)
     clf.fit(X_train, y_train)
-    y_predicted = clf.predict(X_test)
-    # accuracy = np.mean(labelVector_train == y_predicted) * 100
-    accuracy = metrics.accuracy_score(y_predicted,y_test)
-    # print(accuracy) # 30.8
-    # print(metrics.classification_report(y_predicted, y_test, target_names=labels))
-    return clf, accuracy
-
+    # training_accuracy = metrics.accuracy_score(y_predicted,y_test)
+    training_acc = metrics.classification_report(clf.predict(X_train), y_train, target_names=labels)
+    val_acc = metrics.classification_report(clf.predict(X_test), y_test, target_names=labels)
+    return clf, training_acc, val_acc
 
 '''
-Build text reports that show the main classification indicators
-input:
-    groudTruth:1d array-like, or label indicator array / sparse matrix.Ground truth (correct) target values.
-    predicted:1d array-like, or label indicator array / sparse matrix. Estimated targets as returned by a classifier.
-output:
-    reportstr or dict.Text summary of the precision, recall, F1 score for each class. Dictionary returned if output_dict is True. 
-'''
-def Val(groudTruth, predicted):
-    return metrics.classification_report(groudTruth, predicted, target_names=labels)
-
-
-'''
-Test the model using test sets and enter test results.
+Test the model using test sets and return test results.
 input:
     Path:string, path of test address
     clf: The trained Kmeans model
@@ -135,7 +116,14 @@ def test(Path, clf):
         # reshape the matrix to vector
         img_flat = np.reshape(readImg(imgFullPath), (1, -1))
         y_predicted = clf.predict(img_flat)
-        results.append(imgPath + ' ' + str(list(labels.keys())[list(labels.values()).index(y_predicted[0])]))
+        # transform the predicted label(int) into the corresponding label(str), return in lower letters
+        results.append(
+            imgPath + ' ' + str(
+                list(labels.keys())[
+                        list(labels.values()).index(y_predicted[0])
+                    ]
+                ).lower()
+            )
     
     f=open("results_run_1.txt","w")
     
@@ -143,25 +131,42 @@ def test(Path, clf):
     f.close()
     print('Done')
 
-def main():
-    # load the data
-    imgFeature_train, labelVector_train = img2matrix(trainingDatasetPath)
-    # x_train, x_val, y_train, y_val = train_test_split(imgFeature, labelVector, train_size=0.8, random_state=42)
-    # clf, scores = train(x_train, x_val, y_train, y_val)
-    # print(scores)
-    np.random.seed(42)
-    # n_neighbors=5 # 25 Acc
-    # clf, accuracy = train(imgFeature_train, labelVector_train, n_neighbors)
-    # test(testDatasetPath, clf)
-    # print(len(os.listdir(testDatasetPath))) # A total of 2985 samples were tested
+def tuning(imgFeature_train, labelVector_train):
     acc = []
     for n_neighbours in tqdm.tqdm(np.arange(start=1,stop=100)):
         clf, accuracy = train(imgFeature_train, labelVector_train, n_neighbours)
         acc.append(accuracy)
     import matplotlib.pyplot as plt
 
+    top_index = np.argmax(acc)
+    top_acc = np.max(acc)
+
+    min_index = np.argmin(acc)
+    min_acc = np.min(acc)
+    s = 'Top Acc: (' + str(top_index) + ',' + str(top_acc) + ')'
+    s2 = 'Min Acc: (' + str(min_index) + ',' + str(min_acc) + ')'
+
     plt.plot(np.arange(1,100), acc)
+    plt.plot(top_index,top_acc, 'rX')
+    plt.text(top_index,top_acc, s)
+
+    plt.plot(min_index,min_acc, 'gX')
+    plt.text(min_index,min_acc, s2)
     plt.show()
+
+def main():
+    print('training...')
+    # load the data
+    imgFeature_train, labelVector_train = img2matrix(trainingDatasetPath)
+    np.random.seed(7)
+    n_neighbors=5 # 25 Acc
+    clf, training_acc, val_acc = train(imgFeature_train, labelVector_train, n_neighbors)
+
+    print(training_acc)
+    print(val_acc)
+
+    print('testing...')
+    test(testDatasetPath, clf)
 
 
 if __name__ == "__main__":
