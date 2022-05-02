@@ -43,7 +43,7 @@ np.random.seed(42)
 img_size=256
 n_clusters = 500
 n_training_samples = 1024 # batch_size
-Aug_times = 3 # 1->48; 2->69; 3->81; 
+Aug_times = 1 # 1->48; 2->69; 3->81; 4->88;
 
 '''
     Image Augmentation
@@ -70,6 +70,21 @@ tta_transform = A.Compose([
 # enhanced_gray = cv2.equalizeHist(img) if proabilityControl(0.5) else img 
 # imgAugSet.append(enhanced_gray)
 
+# extremly solow and KMeans not converge 
+# ref from https://github.com/TrungTVo/spatial-pyramid-matching-scene-recognition/blob/master/spatial_pyramid.ipynb, only this function
+def extract_denseSIFT(img):
+    DSIFT_STEP_SIZE = 2
+    sift = cv2.SIFT_create()
+    disft_step_size = DSIFT_STEP_SIZE
+    keypoints = [cv2.KeyPoint(x, y, disft_step_size)
+            for y in range(0, img.shape[0], disft_step_size)
+                for x in range(0, img.shape[1], disft_step_size)]
+
+    descriptors = sift.compute(img, keypoints)[1]
+    
+    #keypoints, descriptors = sift.detectAndCompute(gray, None)
+    return descriptors
+
 
 '''
 Data Augmentation and Data Multiplication. 
@@ -86,6 +101,7 @@ output:
 def dataAug(img, times):
     imgList = []
     for _ in range(times):
+        # imgList.append(img)
         imgList.append(transform(image=img)['image'])
     return imgList
 
@@ -157,7 +173,8 @@ def img2Kp_Des(Path,times):
             for augImg in dataAug(img_mat, times=times):
                 extractor = cv2.SIFT_create() # (xxx, 128)
                 # extractor = cv2.ORB_create() # (xxx, 32)
-                kp, des = extractor.detectAndCompute(augImg,None)
+                # kp, des = extractor.detectAndCompute(augImg,None)
+                des = extract_denseSIFT(augImg)
 
                 desDict[img_counter] = des
                 labelVector.append(class_index)
@@ -211,13 +228,14 @@ def kMeans(data, n_training_samples=1024,n_clusters=200):
     # return model, model.cluster_centers_
     return model, vocabulary
 
-# def KMeans_clusters_selctor(data):
-#     model = MiniBatchKMeans(batch_size=2048 ,verbose=1)
-#     # k is range of number of clusters.
-#     visualizer = KElbowVisualizer(model, k=(490,510), timings= True) 
-#     # visualizer = KElbowVisualizer(model, k=(2,30),metric='silhouette', timings= True)
-#     visualizer.fit(data)        # Fit the data to the visualizer
-#     visualizer.show() 
+def KMeans_clusters_selctor(data):
+    model = MiniBatchKMeans(batch_size=1024 ,verbose=1)
+    # k is range of number of clusters.
+    visualizer = KElbowVisualizer(model, k=[15, 400, 500, 600], timings= True) 
+    # visualizer = KElbowVisualizer(model, k=[15, 400, 500, 600],metric='silhouette', timings= True) cannot work
+    visualizer.fit(data)        # Fit the data to the visualizer
+    visualizer.show() 
+
 
 
 '''
@@ -279,25 +297,27 @@ def idf_and_norm(img_histogram_list):
 SVM hyperparamters tunning functions
 '''
 
-# def svcParamSelection(X, y, nfolds):
-#     # best : 0.1, 0.5
-#     Cs = [0.5, 0.1, 0.15, 0.2, 0.3]
-#     gammas = [0.1, 0.11, 0.095, 0.105]
-#     param_grid = {'C': Cs, 'gamma' : gammas}
-#     grid_search = GridSearchCV(SVC(), param_grid, cv=nfolds, n_jobs=4, verbose=1)
-#     grid_search.fit(X, y)
-#     grid_search.best_params_
-#     return grid_search.best_params_
+def svcParamSelection(X, y,):
+    # best : 0.1, 0.5
 
-# def findSVM(im_features, train_labels):
-#     features = im_features
-#     params = svcParamSelection(features, train_labels, 5)
-#     C_param, gamma_param = params.get("C"), params.get("gamma")
-#     print(C_param, gamma_param)
-  
-#     svm = SVC(C =  C_param, gamma = gamma_param,)
-#     svm.fit(features, train_labels)
-#     return svm
+    param_grid = {
+            'kernel':['linear','rbf','sigmoid','poly'],
+            'C':np.linspace(1e-8,1,9),
+            'gamma':np.linspace(0.1,10,5)
+        }
+
+# {'C': 0.2500000075, 'gamma': 0.1, 'kernel': 'linear'}
+    # clf = make_pipeline(StandardScaler(), SVC()) 
+    grid_search = GridSearchCV(SVC(), param_grid, cv=5, n_jobs=4, verbose=1,return_train_score=True)
+
+    grid_search.fit(X, y)
+
+    import pandas as pd 
+    cv_result = pd.DataFrame.from_dict(grid_search.cv_results_) 
+    with open('cv_result.csv','w') as f: 
+        cv_result.to_csv(f)
+
+    print(grid_search.best_params_)
 
 '''
 using train_test_split to randomly divide training set and test set 
@@ -315,7 +335,7 @@ def svmClf(data, label):
     from sklearn.pipeline import make_pipeline
     from sklearn.preprocessing import StandardScaler
     from sklearn.svm import SVC
-    clf = make_pipeline(StandardScaler(), SVC(gamma='auto')) 
+    clf = make_pipeline(StandardScaler(), SVC(C=0.25, gamma= 0.1, kernel='linear')) 
     clf.fit(X_train, y_train)
 
     training_acc = metrics.classification_report(clf.predict(X_train), y_train, target_names=labels)
@@ -399,18 +419,20 @@ def main():
     # print(imgVector_train.shape) # (630380, 128)
     print('Training KMeans...')
     kmeans, visual_words = kMeans(imgVector_train_kmeans, n_training_samples=n_training_samples, n_clusters=n_clusters)
+    # KMeans_clusters_selctor(imgVector_train_kmeans)
     # print(visual_words.shape)
 
     print('Extracting features...')
     imgFeature_train = img2Hist(visual_words, imgVector_train, img_counter, n_clusters)
     # _, imgFeature_train = idf_and_norm(imgFeature_train)
     print('Training OvRLCs...')
-
+    # svcParamSelection(imgFeature_train, labelVector_train,)
     final_model, train_score, val_score = svmClf(imgFeature_train, labelVector_train,) # 81
     print(train_score)
     print(val_score) 
     # final_model, score = OvRLCs(imgFeature_train, labelVector_train,15) # 41
-    test(testDatasetPath, final_model,visual_words,n_clusters)
+    # test(testDatasetPath, final_model,visual_words,n_clusters)
 
 if __name__ == "__main__":
     main()
+
