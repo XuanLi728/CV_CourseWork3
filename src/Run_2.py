@@ -181,11 +181,18 @@ def kMeans(data, n_training_samples=1024,n_clusters=200):
 
     return model, vocabulary
 
+def KMeans_clusters_selctor(data):
+    model = MiniBatchKMeans(batch_size=1024 ,verbose=1)
+    # k is range of number of clusters.
+    visualizer = KElbowVisualizer(model, k=[15, 400, 500, 600], timings= True) 
+    # visualizer = KElbowVisualizer(model, k=[15, 400, 500, 600],metric='silhouette', timings= True) cannot work
+    visualizer.fit(data)        # Fit the data to the visualizer
+    visualizer.show() 
 
 '''
 [1500 images, 200(hyperparamter) clustering centers (vocabulary items)]
 Use vq.vq to get histogram of image
-Vq 5 cluster centers, calculate the nearest number, get the subscript of cluster center set（predict_idies）
+Vq 5 cluster centers, calculate the nearest number, get the subscript of cluster center set (predict_idies）
 input:
     vocabulary: Vocabularies correspond to categories of image slices
     desList: list[ndarray], data 
@@ -291,9 +298,11 @@ def OvRLCs(data, label, n_models):
 
     clf.fit(X_train, y_train)
     # clf = findSVM(X_train, y_train)
-    training_acc = metrics.classification_report(clf.predict(X_train), y_train, target_names=labels)
-    val_acc = metrics.classification_report(clf.predict(X_test), y_test, target_names=labels)
-    return clf, training_acc, val_acc
+    # training_acc = metrics.classification_report(clf.predict(X_train), y_train, target_names=labels)
+    # val_acc = metrics.classification_report(clf.predict(X_test), y_test, target_names=labels)
+    training_accuracy = metrics.accuracy_score(clf.predict(X_train),y_train)
+    val_accuracy = metrics.accuracy_score(clf.predict(X_test),y_test)
+    return clf, training_accuracy, val_accuracy
 
 '''
 test model and get a txt test result
@@ -335,6 +344,47 @@ def test(Path, clf, visual_words, n_clusters):
     f.close()
     print('Done')
 
+def tuning(imgFeature_train, labelVector_train):
+
+    def plot_figure(ax, acc_list, acc_type, model_list):
+        top_index = np.argmax(acc_list)
+        top_acc = np.max(acc_list)
+
+        min_index = np.argmin(acc_list)
+        min_acc = np.min(acc_list)
+        s = 'Top ' + acc_type + ' Acc: (' + str(model_list[top_index]) + ',' + str(round(top_acc, 2)) + ')'
+        s2 = 'Min ' + acc_type + ' Acc: (' + str(model_list[min_index]) + ',' + str(round(min_acc,2)) + ')'
+
+        ax.set_xticks(ticks=model_list,)
+        ax.set_xlabel('Number of models ' + acc_type)
+        ax.set_ylabel('Accuracy')
+
+        ax.plot(model_list, acc_list)
+        ax.plot(model_list[top_index],top_acc, 'rX')
+        # X_location = 25 if model_list[top_index] == 30 else model_list[top_index]
+        ax.text(model_list[top_index]-5,top_acc, s)
+
+        ax.plot(model_list[min_index],min_acc, 'gX')
+        # X_location = 25 if model_list[min_index] == 30 else model_list[min_index]
+        ax.text(model_list[min_index]-5,min_acc, s2)
+
+    train_acc = []
+    val_acc = []
+    model_list = [1,5,15,30]
+    for n_model in tqdm(model_list, desc='training with different #models'):
+        clf, train_accuracy, val_accuracy = OvRLCs(imgFeature_train, labelVector_train, n_model)
+        train_acc.append(train_accuracy)
+        val_acc.append(val_accuracy)
+
+    import matplotlib.pyplot as plt
+    train_acc_figure = plt.subplot(2, 1, 1, frameon = False) # 两行一列，位置是1的子图
+    val_acc_figure = plt.subplot(2, 1, 2, frameon = False) 
+    plot_figure(train_acc_figure, train_acc, 'train', model_list)
+    plot_figure(val_acc_figure, val_acc, 'val', model_list)
+
+    plt.show()
+
+
 def main():
 
     imgVector_train, labelVector_train, img_counter, = img2vectors(trainingDatasetPath, step_size=step_size)
@@ -342,18 +392,19 @@ def main():
     # print(imgFeature_train.shape) # (1536000, 4)
     print('Training KMeans...')
     kmeans, visual_words = kMeans(imgVector_train_kmeans, n_training_samples=n_training_samples, n_clusters=n_clusters)
-    # KMeans_clusters_selctor(imgVector_train)
+    # KMeans_clusters_selctor(imgVector_train_kmeans)
     print('Extracting features...')
     imgFeature_train_CLF = img2Hist(visual_words, imgVector_train, img_counter, n_clusters)
     _, imgFeature_train_CLF = idf_and_norm(imgFeature_train_CLF)
     # imgVector_train = normalisation(imgFeature_train)
-    print('Training OvRLCs...')
-    final_model, train_score, val_score = OvRLCs(imgFeature_train_CLF, labelVector_train, n_models=n_models) # 42
-    print(train_score)
-    print(val_score)
-
-    print('Exporting test results...')
-    test(testDatasetPath, final_model,visual_words,n_clusters)
+    # print('Training OvRLCs...')
+    # final_model, train_score, val_score = OvRLCs(imgFeature_train_CLF, labelVector_train, n_models=n_models) # 42
+    # print(train_score)
+    # print(val_score)
+    print('Tuning OvRLCs...')
+    tuning(imgFeature_train_CLF, labelVector_train)
+    # print('Exporting test results...')
+    # test(testDatasetPath, final_model,visual_words,n_clusters)
 
 
 if __name__ == "__main__":

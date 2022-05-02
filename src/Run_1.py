@@ -94,10 +94,11 @@ def train(imgFeature_train, labelVector_train, n_neighbors):
 
     clf = KNeighborsClassifier(n_neighbors=n_neighbors)
     clf.fit(X_train, y_train)
-    # training_accuracy = metrics.accuracy_score(y_predicted,y_test)
-    training_acc = metrics.classification_report(clf.predict(X_train), y_train, target_names=labels)
-    val_acc = metrics.classification_report(clf.predict(X_test), y_test, target_names=labels)
-    return clf, training_acc, val_acc
+    training_accuracy = metrics.accuracy_score(clf.predict(X_train),y_train)
+    val_accuracy = metrics.accuracy_score(clf.predict(X_test),y_test)
+    # training_acc = metrics.classification_report(clf.predict(X_train), y_train, target_names=labels)
+    # val_acc = metrics.classification_report(clf.predict(X_test), y_test, target_names=labels)
+    return clf, training_accuracy, val_accuracy
 
 '''
 Test the model using test sets and return test results.
@@ -132,41 +133,62 @@ def test(Path, clf):
     print('Done')
 
 def tuning(imgFeature_train, labelVector_train):
-    acc = []
-    for n_neighbours in tqdm.tqdm(np.arange(start=1,stop=100)):
-        clf, accuracy = train(imgFeature_train, labelVector_train, n_neighbours)
-        acc.append(accuracy)
+
+    def plot_figure(ax, acc_list, acc_type, model_list):
+        top_index = np.argmax(acc_list)
+        top_acc = np.max(acc_list)
+
+        min_index = np.argmin(acc_list)
+        min_acc = np.min(acc_list)
+        s = 'Top ' + acc_type + ' Acc: (' + str(model_list[top_index]) + ',' + str(round(top_acc, 2)) + ')'
+        s2 = 'Min ' + acc_type + ' Acc: (' + str(model_list[min_index]) + ',' + str(round(min_acc,2)) + ')'
+
+        ax.set_xlabel('number of models ' + acc_type)
+        ax.set_ylabel('accuracy')
+        ax.grid()
+
+        ax.plot(model_list, acc_list)
+        # ax.set_xticks(ticks=model_list,)
+        ax.plot(model_list[top_index],top_acc, 'rX')
+        # X_location = 25 if model_list[top_index] == 30 else model_list[top_index]
+        ax.text(model_list[top_index],top_acc, s)
+
+        ax.plot(model_list[min_index],min_acc, 'gX')
+        # X_location = 25 if model_list[min_index] == 30 else model_list[min_index]
+        ax.text(model_list[min_index],min_acc, s2)
+
+    train_acc = []
+    val_acc = []
+    n_neighbors_list = np.arange(2,50)
+    best_acc = 0
+    for n_model in tqdm.tqdm(n_neighbors_list, desc='training with different n_neighbors'):
+        clf, train_accuracy, val_accuracy = train(imgFeature_train, labelVector_train, n_model)
+        if val_accuracy >= best_acc:
+            best_model = clf 
+        train_acc.append(train_accuracy)
+        val_acc.append(val_accuracy)
+
     import matplotlib.pyplot as plt
-
-    top_index = np.argmax(acc)
-    top_acc = np.max(acc)
-
-    min_index = np.argmin(acc)
-    min_acc = np.min(acc)
-    s = 'Top Acc: (' + str(top_index) + ',' + str(top_acc) + ')'
-    s2 = 'Min Acc: (' + str(min_index) + ',' + str(min_acc) + ')'
-
-    plt.plot(np.arange(1,100), acc)
-    plt.plot(top_index,top_acc, 'rX')
-    plt.text(top_index,top_acc, s)
-
-    plt.plot(min_index,min_acc, 'gX')
-    plt.text(min_index,min_acc, s2)
+    train_acc_figure = plt.subplot(2, 1, 1, frameon = False) # 两行一列，位置是1的子图
+    val_acc_figure = plt.subplot(2, 1, 2, frameon = False) 
+    plot_figure(train_acc_figure, train_acc, 'train', n_neighbors_list)
+    plot_figure(val_acc_figure, val_acc, 'val', n_neighbors_list)
+    plt.tight_layout()
     plt.show()
+    return best_model
 
 def main():
     print('training...')
     # load the data
     imgFeature_train, labelVector_train = img2matrix(trainingDatasetPath)
     np.random.seed(7)
-    n_neighbors=5 # 25 Acc
-    clf, training_acc, val_acc = train(imgFeature_train, labelVector_train, n_neighbors)
-
-    print(training_acc)
-    print(val_acc)
-
+    # n_neighbors=19 # 27 Acc
+    # clf, training_acc, val_acc = train(imgFeature_train, labelVector_train, n_neighbors)
+    # print(training_acc)
+    # print(val_acc)
+    best_model = tuning(imgFeature_train, labelVector_train)
     print('testing...')
-    test(testDatasetPath, clf)
+    test(testDatasetPath, best_model)
 
 
 if __name__ == "__main__":

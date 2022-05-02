@@ -43,7 +43,7 @@ np.random.seed(42)
 img_size=256
 n_clusters = 500
 n_training_samples = 1024 # batch_size
-Aug_times = 4 # 1->48; 2->69; 3->81; 4->88;
+Aug_times = 5 # 1->48; 2->69; 3->81; 4->0.88
 
 '''
     Image Augmentation
@@ -70,21 +70,6 @@ tta_transform = A.Compose([
 # enhanced_gray = cv2.equalizeHist(img) if proabilityControl(0.5) else img 
 # imgAugSet.append(enhanced_gray)
 
-# extremly solow and KMeans not converge 
-# ref from https://github.com/TrungTVo/spatial-pyramid-matching-scene-recognition/blob/master/spatial_pyramid.ipynb, only this function
-def extract_denseSIFT(img):
-    DSIFT_STEP_SIZE = 2
-    sift = cv2.SIFT_create()
-    disft_step_size = DSIFT_STEP_SIZE
-    keypoints = [cv2.KeyPoint(x, y, disft_step_size)
-            for y in range(0, img.shape[0], disft_step_size)
-                for x in range(0, img.shape[1], disft_step_size)]
-
-    descriptors = sift.compute(img, keypoints)[1]
-    
-    #keypoints, descriptors = sift.detectAndCompute(gray, None)
-    return descriptors
-
 
 '''
 Data Augmentation and Data Multiplication. 
@@ -101,8 +86,8 @@ output:
 def dataAug(img, times):
     imgList = []
     for _ in range(times):
-        # imgList.append(img)
-        imgList.append(transform(image=img)['image'])
+        # imgList.append(transform(image=img)['image'])
+        imgList.append(img)
     return imgList
 
 '''
@@ -155,33 +140,54 @@ output:
     img_counter: total numer of images (int)
 '''
 def img2Kp_Des(Path,times):
-    desDict = {}
-    labelVector = []
+    train_desDict = {}
+    val_desDict = {}
+    labelVector_train = []
+    labelVector_val = []
 
     # class_counter = np.zeros((15, ), dtype=int)
-    img_counter = 0 
+    img_counter_train = 0 
+    img_counter_val = 0
     for dirName in tqdm(os.listdir(Path), desc='reading images...'):
         if(dirName.startswith('.')): continue # Ignore the .DS_Stroe
         dirFullPath = os.path.join(Path, dirName)
 
         class_index = labels[dirName]
-
+        class_counter = 0
         for imgPath in os.listdir(dirFullPath):
+            class_total_image = len(os.listdir(dirFullPath))
+            train_sample = int(class_total_image * 0.8) # for dataset expanding w/o ImgAug
             if(imgPath.startswith('.')): continue # Ignore the .DS_Stroe
+
             imgFullPath = os.path.join(dirFullPath, imgPath)
-            img_mat = readImg(imgFullPath) # 读取图片
-            for augImg in dataAug(img_mat, times=times):
+            img_mat = readImg(imgFullPath) # read image
+
+            class_counter += 1 
+            if class_counter >= train_sample: # testing part of image for training (w/o Image Aug)
                 extractor = cv2.SIFT_create() # (xxx, 128)
                 # extractor = cv2.ORB_create() # (xxx, 32)
-                # kp, des = extractor.detectAndCompute(augImg,None)
-                des = extract_denseSIFT(augImg)
+                kp, des = extractor.detectAndCompute(img_mat,None)
+                val_desDict[img_counter_val] = des
+                labelVector_val.append(class_index)
+                img_counter_val += 1
+            else: # for training (w/o Image Aug)
+                for augImg in dataAug(img_mat, times=times):
+                    extractor = cv2.SIFT_create() # (xxx, 128)
+                    # extractor = cv2.ORB_create() # (xxx, 32)
+                    kp, des = extractor.detectAndCompute(augImg,None)
 
-                desDict[img_counter] = des
-                labelVector.append(class_index)
-                img_counter += 1
+                    train_desDict[img_counter_train] = des
+                    labelVector_train.append(class_index)
+                    img_counter_train += 1
 
-    return desDict, list2vstack(labelVector), img_counter
-
+    return (
+        train_desDict, 
+        list2vstack(labelVector_train), 
+        val_desDict, 
+        list2vstack(labelVector_val),
+        img_counter_train, 
+        img_counter_val
+    )
 '''
 two way to change list[ndarray] type data to ndarray 
 list2vstack: using vstack
@@ -235,7 +241,6 @@ def KMeans_clusters_selctor(data):
     # visualizer = KElbowVisualizer(model, k=[15, 400, 500, 600],metric='silhouette', timings= True) cannot work
     visualizer.fit(data)        # Fit the data to the visualizer
     visualizer.show() 
-
 
 
 '''
@@ -319,6 +324,7 @@ def svcParamSelection(X, y,):
 
     print(grid_search.best_params_)
 
+
 '''
 using train_test_split to randomly divide training set and test set 
 to train and val the model 
@@ -331,16 +337,17 @@ output:
 '''
 def svmClf(data, label):
 
-    X_train, X_test, y_train, y_test = train_test_split(data, label, train_size=0.8, shuffle=True)
+    # X_train, X_test, y_train, y_test = train_test_split(data, label, train_size=1, shuffle=True)
     from sklearn.pipeline import make_pipeline
     from sklearn.preprocessing import StandardScaler
     from sklearn.svm import SVC
     clf = make_pipeline(StandardScaler(), SVC(C=0.25, gamma= 0.1, kernel='linear')) 
-    clf.fit(X_train, y_train)
+    clf.fit(data, label)
 
-    training_acc = metrics.classification_report(clf.predict(X_train), y_train, target_names=labels)
-    val_acc = metrics.classification_report(clf.predict(X_test), y_test, target_names=labels)
-    return clf, training_acc, val_acc
+    training_acc = metrics.classification_report(clf.predict(data), label, target_names=labels)
+    # val_acc = metrics.classification_report(clf.predict(X_test), y_test, target_names=labels)
+    return clf, training_acc
+
 '''
 using train_test_split to randomly divide training set and test set 
 and train model 
@@ -354,7 +361,7 @@ output:
 '''
 def OvRLCs(data, label, n_models):
 
-    X_train, X_test, y_train, y_test = train_test_split(data, label, train_size=0.8, shuffle=True)
+    X_train, y_train = train_test_split(data, label, train_size=0.8, shuffle=True)
     estimators = []
     for index in range(n_models):
         # model = ('svc_'+str(index), SVC(C=0.5, gamma=0.1))
@@ -372,8 +379,15 @@ def OvRLCs(data, label, n_models):
     clf.fit(X_train, y_train)
 
     train_report = metrics.classification_report(y_train,clf.predict(X_train), target_names=labels)
-    val_report =  metrics.classification_report(y_test,clf.predict(X_test), target_names=labels)
-    return clf, train_report, val_report
+    return clf, train_report
+
+def val(data, label, clf ,img_counter_val, visual_words,n_clusters):
+    imgFeature_val = img2Hist(visual_words, data, img_counter_val, n_clusters)
+
+    # X_val, _, y_val, _ = train_test_split(imgFeature_val, label, train_size=1,shuffle=True)
+    train_report = metrics.classification_report(label,clf.predict(imgFeature_val), target_names=labels)
+    
+    return train_report
 
 '''
 test model and get a txt test result
@@ -412,10 +426,8 @@ def test(Path, clf, visual_words, n_clusters):
     print('Done')
 
 def main():
-    imgVector_train, labelVector_train, img_counter = img2Kp_Des(trainingDatasetPath, Aug_times)
+    imgVector_train, labelVector_train, imgVector_val, labelVector_val, img_counter_train, img_counter_val = img2Kp_Des(trainingDatasetPath, Aug_times)
     imgVector_train_kmeans = list2vstack1(list(imgVector_train.values()))
-
-
     # print(imgVector_train.shape) # (630380, 128)
     print('Training KMeans...')
     kmeans, visual_words = kMeans(imgVector_train_kmeans, n_training_samples=n_training_samples, n_clusters=n_clusters)
@@ -423,16 +435,23 @@ def main():
     # print(visual_words.shape)
 
     print('Extracting features...')
-    imgFeature_train = img2Hist(visual_words, imgVector_train, img_counter, n_clusters)
+    imgFeature_train = img2Hist(visual_words, imgVector_train, img_counter_train, n_clusters)
     # _, imgFeature_train = idf_and_norm(imgFeature_train)
-    print('Training OvRLCs...')
+    print('Training SVM...')
     # svcParamSelection(imgFeature_train, labelVector_train,)
-    final_model, train_score, val_score = svmClf(imgFeature_train, labelVector_train,) # 81
+    final_model, train_score = svmClf(imgFeature_train, labelVector_train,) # 81
     print(train_score)
-    print(val_score) 
+    val_score = val(
+        data=imgVector_val, 
+        label=labelVector_val,
+        clf=final_model,
+        img_counter_val=img_counter_val,
+        visual_words=visual_words,
+        n_clusters=n_clusters)
+
+    print(val_score)
     # final_model, score = OvRLCs(imgFeature_train, labelVector_train,15) # 41
     # test(testDatasetPath, final_model,visual_words,n_clusters)
 
 if __name__ == "__main__":
     main()
-
